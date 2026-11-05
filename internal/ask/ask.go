@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/AlfrescoLabs/openarch-docs/internal/casefile"
 	"github.com/AlfrescoLabs/openarch-docs/internal/index"
@@ -56,7 +57,13 @@ type Result struct {
 	// Unknown are numbers the answer cites that are not sources. They mean
 	// the model made up a citation.
 	Unknown []int `json:"unknown"`
+	// Warning tells that the answer is not usable, such as an answer with
+	// only citations.
+	Warning string `json:"warning,omitempty"`
 }
+
+// retryPrompt asks again when the answer has no sentences.
+const retryPrompt = "Your answer has no sentences. Write 1 to 5 full sentences in the language of the question, each followed by its source numbers. If the sources do not hold the answer, write that in one sentence."
 
 // instruction is the system message. The answer language follows the question.
 const instruction = `You answer questions about a case file. Use only the numbered sources in the user message.
@@ -69,7 +76,8 @@ Rules:
 - Sources marked "note" are earlier notes of the user: interpretations, not evidence. Prefer case sources.
 - Sources marked "reference" are laws or rules, not facts of the case.
 - Do not say that a person or a company is at fault unless a source says so.
-- Be short and plain.`
+
+Format: 1 to 5 plain sentences that answer the question. Put the source numbers after each sentence, like "The meter room is in the basement [3]."`
 
 // Run answers the question.
 func Run(ctx context.Context, opts Options) (*Result, error) {
@@ -91,28 +99,68 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		res.Answer = "The index has no text for this question. Run 'openarch docs index', or add the documents that hold the answer."
 		return res, nil
 	}
+	// Pieces of the same file become one source, in rank order.
+	type group struct {
+		hit   index.Hit
+		texts []string
+	}
+	var groups []*group
+	byPath := map[string]*group{}
+	for _, h := range hits {
+		if g, ok := byPath[h.Path]; ok {
+			g.texts = append(g.texts, strings.TrimSpace(h.Text))
+			continue
+		}
+		g := &group{hit: h, texts: []string{strings.TrimSpace(h.Text)}}
+		byPath[h.Path] = g
+		groups = append(groups, g)
+	}
 	var b strings.Builder
-	b.WriteString("Sources:\n\n")
-	for i, h := range hits {
+	fmt.Fprintf(&b, "Question: %s\n\nSources:\n\n", opts.Question)
+	for i, g := range groups {
+		h := g.hit
 		s := Source{N: i + 1, Cite: h.Cite, Path: h.Path, Origin: h.Origin, Page: h.Page, Role: h.Role}
 		res.Sources = append(res.Sources, s)
 		fmt.Fprintf(&b, "[%d] (%s) %s\n", s.N, s.Role, s.Cite)
 		if h.Sender != "" {
 			fmt.Fprintf(&b, "Sender: %s\n", h.Sender)
 		}
-		fmt.Fprintf(&b, "%s\n\n", strings.TrimSpace(h.Text))
+		fmt.Fprintf(&b, "%s\n\n", strings.Join(g.texts, "\n[...]\n"))
 	}
 	fmt.Fprintf(&b, "Question: %s", opts.Question)
-	answer, err := opts.Chat.Chat(ctx, opts.ChatModel, []models.Message{
+	messages := []models.Message{
 		{Role: "system", Content: instruction},
 		{Role: "user", Content: b.String()},
-	}, models.ChatOptions{Temperature: 0.1, MaxTokens: 1024})
+	}
+	chatOpts := models.ChatOptions{Temperature: 0.1, MaxTokens: 1024}
+	answer, err := opts.Chat.Chat(ctx, opts.ChatModel, messages, chatOpts)
 	if err != nil {
 		return nil, err
+	}
+	if !hasSentences(answer) {
+		messages = append(messages, models.Message{Role: "assistant", Content: answer}, models.Message{Role: "user", Content: retryPrompt})
+		if answer, err = opts.Chat.Chat(ctx, opts.ChatModel, messages, chatOpts); err != nil {
+			return nil, err
+		}
+		if !hasSentences(answer) {
+			res.Warning = "The model gave no usable answer. Read the sources below, or try a larger model with --profile large."
+		}
 	}
 	res.Answer = answer
 	res.Cited, res.Unknown = citations(answer, len(res.Sources))
 	return res, nil
+}
+
+// hasSentences reports whether the answer has words besides its citations.
+func hasSentences(answer string) bool {
+	rest := citation.ReplaceAllString(answer, " ")
+	n := 0
+	for _, r := range rest {
+		if unicode.IsLetter(r) {
+			n++
+		}
+	}
+	return n >= 10
 }
 
 // citation matches [3] and [1, 4] and [2][5].

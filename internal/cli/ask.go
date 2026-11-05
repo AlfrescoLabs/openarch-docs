@@ -28,6 +28,11 @@ func (r askResult) WriteText(w io.Writer) error {
 			return err
 		}
 	}
+	if r.Warning != "" {
+		if _, err := fmt.Fprintf(w, "Warning: %s\n", r.Warning); err != nil {
+			return err
+		}
+	}
 	if len(r.Unknown) > 0 {
 		if _, err := fmt.Fprintf(w, "Warning: the answer cites sources that do not exist: %v. Check it against the sources.\n", r.Unknown); err != nil {
 			return err

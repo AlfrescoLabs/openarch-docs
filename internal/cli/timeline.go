@@ -26,6 +26,9 @@ func (r timelineResult) WriteText(w io.Writer) error {
 			when = "? " + e.Raw
 		}
 		what := e.Subject
+		if what == "" {
+			what = "(no subject)"
+		}
 		if e.Kind == timeline.KindChat {
 			what = strings.Join(strings.Fields(e.Text), " ")
 		}

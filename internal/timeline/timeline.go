@@ -183,6 +183,17 @@ func ParseDate(s string) string {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t.Format(timeLayout)
 	}
+	// Gmail writes "5:51\u202fPM" with a narrow no-break space; Go regexp \s
+	// is ASCII only, so every Unicode space becomes a plain space.
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsSpace(r):
+			return ' '
+		case r == '\u200b' || r == '\u200e' || r == '\u200f':
+			return -1
+		}
+		return r
+	}, s)
 	low := strings.ToLower(fold(s))
 	hour, minute := 0, 0
 	if c := clockRE.FindStringSubmatchIndex(low); c != nil {

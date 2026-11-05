@@ -13,14 +13,18 @@ import (
 	"github.com/AlfrescoLabs/openarch-docs/internal/models"
 )
 
+// fakeChat returns its answers in order, and repeats the last one.
 type fakeChat struct {
-	answer   string
+	answers  []string
+	calls    int
 	messages []models.Message
 }
 
 func (f *fakeChat) Chat(_ context.Context, _ string, messages []models.Message, _ models.ChatOptions) (string, error) {
 	f.messages = messages
-	return f.answer, nil
+	a := f.answers[min(f.calls, len(f.answers)-1)]
+	f.calls++
+	return a, nil
 }
 
 func newIndex(t *testing.T) *index.Index {
@@ -56,7 +60,7 @@ func newIndex(t *testing.T) *index.Index {
 
 func TestRun(t *testing.T) {
 	x := newIndex(t)
-	chat := &fakeChat{answer: "Está en el sótano -2 [1]. La ley pide comunicación previa [2, 1]. Dato inventado [7]."}
+	chat := &fakeChat{answers: []string{"Está en el sótano -2 [1]. La ley pide comunicación previa [2, 1]. Dato inventado [7]."}}
 	res, err := Run(context.Background(), Options{Question: "¿Dónde está el sotano?", Index: x, Chat: chat, ChatModel: "m"})
 	if err != nil {
 		t.Fatal(err)
@@ -94,10 +98,51 @@ func TestRun(t *testing.T) {
 
 func TestRunNoHits(t *testing.T) {
 	x := newIndex(t)
-	chat := &fakeChat{answer: "x"}
+	chat := &fakeChat{answers: []string{"x"}}
 	res, err := Run(context.Background(), Options{Question: "zzzz", Index: x, Chat: chat, ChatModel: "m"})
 	if err != nil || len(res.Sources) != 0 || chat.messages != nil || !strings.Contains(res.Answer, "no text") {
 		t.Errorf("no hits = %+v, %v", res, err)
+	}
+}
+
+func TestRunRetry(t *testing.T) {
+	x := newIndex(t)
+	chat := &fakeChat{answers: []string{"[1] [2]", "Está en el sótano -2 [1]."}}
+	res, err := Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m"})
+	if err != nil || chat.calls != 2 || res.Answer != "Está en el sótano -2 [1]." || res.Warning != "" {
+		t.Fatalf("retry = %+v, %v, calls %d", res, err, chat.calls)
+	}
+	if last := chat.messages[len(chat.messages)-1]; last.Role != "user" || !strings.Contains(last.Content, "no sentences") {
+		t.Errorf("retry message = %+v", last)
+	}
+	chat = &fakeChat{answers: []string{"[1]"}}
+	res, err = Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m"})
+	if err != nil || chat.calls != 2 || !strings.Contains(res.Warning, "--profile large") {
+		t.Errorf("no answer = %+v, %v", res, err)
+	}
+}
+
+func TestSameFileIsOneSource(t *testing.T) {
+	root := t.TempDir()
+	long := strings.Repeat("El sotano tiene contadores y cuadros electricos. ", 40)
+	if err := os.WriteFile(filepath.Join(root, "largo.txt"), []byte(long), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ingest.Run(ingest.Options{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	x, err := index.Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = x.Close() }()
+	if _, err := x.Build(context.Background(), index.BuildOptions{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	chat := &fakeChat{answers: []string{"Hay contadores en el sotano [1]."}}
+	res, err := Run(context.Background(), Options{Question: "sotano contadores", Index: x, Chat: chat, ChatModel: "m"})
+	if err != nil || len(res.Sources) != 1 || !strings.Contains(chat.messages[1].Content, "[...]") {
+		t.Errorf("sources = %+v, %v", res.Sources, err)
 	}
 }
 

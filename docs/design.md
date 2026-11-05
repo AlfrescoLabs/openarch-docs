@@ -94,11 +94,11 @@ Models run on Docker Model Runner at `--model-url` (default `http://localhost:12
 
 ## Ask
 
-`ask` searches the index for the question (case documents and references; notes only with `--with-notes`), and gives the best chunks to the chat model of the profile as numbered sources. Each source shows its role (`case`, `reference`, `note`), its citation and its sender.
+`ask` searches the index for the question (case documents and references; notes only with `--with-notes`), and gives the best chunks to the chat model of the profile as numbered sources. Pieces of the same file become one source. Each source shows its role (`case`, `reference`, `note`), its citation and its sender. The question comes before and after the sources.
 
 The system message asks the model to answer in the language of the question, to cite a source for every fact as `[n]`, to say plainly when the sources do not hold the answer, to keep facts apart from interpretations, to treat notes as interpretations and references as rules, and to blame nobody without a source. The model makes no tool calls, so small models work.
 
-The result lists the sources, marks the cited ones, and lists cited numbers that are not sources (`unknown`): a sign that the model made up a citation.
+The answer must be 1 to 5 sentences with source numbers. An answer with no sentences (only citations) gets one retry with a reminder, then a `warning`. The result lists the sources, marks the cited ones, and lists cited numbers that are not sources (`unknown`): a sign that the model made up a citation.
 
 ## Timeline
 
