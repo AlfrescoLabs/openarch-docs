@@ -65,14 +65,9 @@ func TestRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Sources) != 2 {
+	// The email, the reference and the note, last and marked as a note.
+	if len(res.Sources) != 3 || res.Sources[2].Role != index.RoleNote {
 		t.Fatalf("sources = %+v", res.Sources)
-	}
-	// Notes are not sources unless asked.
-	for _, s := range res.Sources {
-		if s.Role == index.RoleNote {
-			t.Errorf("note used as source: %+v", s)
-		}
 	}
 	if !slices.Equal(res.Cited, []int{1, 2}) || !slices.Equal(res.Unknown, []int{7}) {
 		t.Errorf("cited %v unknown %v", res.Cited, res.Unknown)
@@ -87,12 +82,12 @@ func TestRun(t *testing.T) {
 		}
 	}
 
-	res, err = Run(context.Background(), Options{Question: "sotano", WithNotes: true, Index: x, Chat: chat, ChatModel: "m"})
-	if err != nil || len(res.Sources) != 3 {
-		t.Fatalf("with notes = %+v, %v", res, err)
-	}
 	if !strings.Contains(chat.messages[1].Content.(string), `role="note" file="note notes/estado.md"`) {
 		t.Error("note not marked as note")
+	}
+	res, err = Run(context.Background(), Options{Question: "sotano", NoNotes: true, Index: x, Chat: chat, ChatModel: "m"})
+	if err != nil || len(res.Sources) != 2 {
+		t.Fatalf("no notes = %+v, %v", res, err)
 	}
 }
 

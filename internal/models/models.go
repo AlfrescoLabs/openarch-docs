@@ -141,6 +141,9 @@ func ImagePart(mediaType string, data []byte) Part {
 type ChatOptions struct {
 	Temperature float64
 	MaxTokens   int
+	// Seed makes answers repeatable with the same model and input, when it
+	// is not 0.
+	Seed int
 	// Think lets models that think before they answer, such as GLM 4.7
 	// Flash, do so. When false the chat template is asked to skip it: the
 	// thinking can use every token before the answer starts.
@@ -163,6 +166,9 @@ func (c *Client) Chat(ctx context.Context, model string, messages []Message, opt
 	body := map[string]any{"model": model, "messages": messages, "temperature": opts.Temperature}
 	if opts.MaxTokens > 0 {
 		body["max_tokens"] = opts.MaxTokens
+	}
+	if opts.Seed != 0 {
+		body["seed"] = opts.Seed
 	}
 	if !opts.Think {
 		// llama.cpp passes these to the chat template; templates without the

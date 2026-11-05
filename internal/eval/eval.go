@@ -1,0 +1,216 @@
+// Package eval runs a set of questions through ask and checks each answer
+// against the words it must and must not hold. It measures how well the
+// plugin answers the questions of a real case.
+package eval
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"io"
+	"strings"
+	"time"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
+
+	"github.com/AlfrescoLabs/openarch-docs/internal/ask"
+)
+
+// Question is one question of a set.
+type Question struct {
+	Line int    `json:"line"`
+	Text string `json:"question"`
+	// Expect are groups of words; each group needs one of its words in the answer.
+	Expect [][]string `json:"expect,omitempty"`
+	// Forbid are words that must not be in the answer.
+	Forbid []string `json:"forbid,omitempty"`
+	// Skip, when set, is why the question is not asked.
+	Skip string `json:"skip,omitempty"`
+}
+
+// Parse reads a question set:
+//
+//	# a comment
+//	Q: the question
+//	E: word | other word; second group
+//	N: word that must not appear
+//	S: reason to skip
+//
+// Each Q starts a question. Words are compared in lower case, without accents.
+func Parse(r io.Reader) ([]Question, error) {
+	var qs []Question
+	sc := bufio.NewScanner(r)
+	n := 0
+	for sc.Scan() {
+		n++
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok || len(key) != 1 {
+			return nil, fmt.Errorf("line %d: want Q:, E:, N: or S:", n)
+		}
+		value = strings.TrimSpace(value)
+		if key == "Q" {
+			qs = append(qs, Question{Line: n, Text: value})
+			continue
+		}
+		if len(qs) == 0 {
+			return nil, fmt.Errorf("line %d: %s: before the first Q:", n, key)
+		}
+		q := &qs[len(qs)-1]
+		switch key {
+		case "E":
+			for _, group := range strings.Split(value, ";") {
+				var words []string
+				for _, w := range strings.Split(group, "|") {
+					if w = strings.TrimSpace(w); w != "" {
+						words = append(words, w)
+					}
+				}
+				if len(words) > 0 {
+					q.Expect = append(q.Expect, words)
+				}
+			}
+		case "N":
+			for _, w := range strings.Split(value, ";") {
+				if w = strings.TrimSpace(w); w != "" {
+					q.Forbid = append(q.Forbid, w)
+				}
+			}
+		case "S":
+			q.Skip = value
+		default:
+			return nil, fmt.Errorf("line %d: unknown key %s:", n, key)
+		}
+	}
+	return qs, sc.Err()
+}
+
+// Results of a question.
+const (
+	Pass    = "pass"
+	Partial = "partial"
+	Fail    = "fail"
+	Skipped = "skip"
+)
+
+// Result is the outcome of one question.
+type Result struct {
+	Question
+	Status string `json:"status"`
+	Answer string `json:"answer,omitempty"`
+	// Missing are the expected groups the answer lacks; Found the forbidden words it has.
+	Missing []string `json:"missing,omitempty"`
+	Found   []string `json:"found,omitempty"`
+	Sources []string `json:"sources,omitempty"`
+	Seconds float64  `json:"seconds"`
+	Error   string   `json:"error,omitempty"`
+}
+
+// Report is the outcome of a set.
+type Report struct {
+	Model   string   `json:"model"`
+	Results []Result `json:"results"`
+	Pass    int      `json:"pass"`
+	Partial int      `json:"partial"`
+	Fail    int      `json:"fail"`
+	Skip    int      `json:"skip"`
+}
+
+// Options configure a run.
+type Options struct {
+	Ask      ask.Options // without Question
+	Progress io.Writer
+}
+
+// Run asks every question of the set.
+func Run(ctx context.Context, qs []Question, opts Options) (*Report, error) {
+	rep := &Report{Model: opts.Ask.ChatModel, Results: []Result{}}
+	for i, q := range qs {
+		r := Result{Question: q}
+		if q.Skip != "" {
+			r.Status = Skipped
+			rep.Skip++
+			rep.Results = append(rep.Results, r)
+			continue
+		}
+		if opts.Progress != nil {
+			_, _ = fmt.Fprintf(opts.Progress, "[%d/%d] %s\n", i+1, len(qs), q.Text)
+		}
+		o := opts.Ask
+		o.Question = q.Text
+		start := time.Now()
+		res, err := ask.Run(ctx, o)
+		r.Seconds = float64(time.Since(start).Milliseconds()) / 1000
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			r.Status, r.Error = Fail, err.Error()
+			rep.Fail++
+			rep.Results = append(rep.Results, r)
+			continue
+		}
+		r.Answer = res.Answer
+		for _, n := range res.Cited {
+			r.Sources = append(r.Sources, res.Sources[n-1].Cite)
+		}
+		r.Status, r.Missing, r.Found = Score(q, res.Answer)
+		switch r.Status {
+		case Pass:
+			rep.Pass++
+		case Partial:
+			rep.Partial++
+		default:
+			rep.Fail++
+		}
+		rep.Results = append(rep.Results, r)
+	}
+	return rep, nil
+}
+
+// Score checks an answer: pass when every expected group is there and no
+// forbidden word is; partial when at least half of the groups are there and
+// no forbidden word is; else fail.
+func Score(q Question, answer string) (status string, missing, found []string) {
+	a := fold(answer)
+	for _, group := range q.Expect {
+		ok := false
+		for _, w := range group {
+			if strings.Contains(a, fold(w)) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			missing = append(missing, strings.Join(group, " | "))
+		}
+	}
+	for _, w := range q.Forbid {
+		if strings.Contains(a, fold(w)) {
+			found = append(found, w)
+		}
+	}
+	switch {
+	case len(found) > 0:
+		return Fail, missing, found
+	case len(missing) == 0:
+		return Pass, nil, nil
+	case 2*len(missing) <= len(q.Expect):
+		return Partial, missing, nil
+	}
+	return Fail, missing, nil
+}
+
+func fold(s string) string {
+	var b strings.Builder
+	for _, r := range norm.NFD.String(strings.ToLower(s)) {
+		if !unicode.Is(unicode.Mn, r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}

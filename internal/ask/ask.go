@@ -30,8 +30,9 @@ type Options struct {
 	Question string
 	// Limit is the number of sources the model reads.
 	Limit int
-	// WithNotes adds notes to the sources. They are interpretations, not evidence.
-	WithNotes bool
+	// NoNotes leaves the notes out of the sources. By default up to maxNotes
+	// notes join, marked as interpretations: they hold earlier work.
+	NoNotes bool
 	// Think lets the model think before it answers: slower, sometimes better.
 	Think      bool
 	Index      *index.Index
@@ -73,6 +74,9 @@ type Result struct {
 // retryPrompt asks again when the answer has no sentences.
 const retryPrompt = "Your answer has no sentences. Write 1 to 5 full sentences in the language of the question, each followed by its source numbers. If the sources do not hold the answer, write that in one sentence."
 
+// maxNotes is the number of notes that join the sources.
+const maxNotes = 3
+
 // instruction is the system message. The answer language follows the question.
 const instruction = `You answer questions about a case file. Use only the sources in the user message. Each source is between <source n="N" ...> and </source>.
 
@@ -84,6 +88,8 @@ Rules:
 - Sources marked "note" are earlier notes of the user: interpretations, not evidence. Prefer case sources.
 - Sources marked "reference" are laws or rules, not facts of the case.
 - Do not say that a person or a company is at fault unless a source says so.
+- When the question asks where a document is, give its file name and its path from the source.
+- "Last" or "latest" means the newest date among the sources.
 - When a fact comes from an email or a chat, say who wrote it. Never write "we" or "us" for a writer.
 
 Format: 1 to 5 plain sentences that answer the question. Put the source numbers after each sentence, like "The meter room is in the basement [3]."`
@@ -91,17 +97,30 @@ Format: 1 to 5 plain sentences that answer the question. Put the source numbers 
 // Run answers the question.
 func Run(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Limit <= 0 {
-		opts.Limit = 8
-	}
-	roles := []string{casefile.RoleCase, casefile.RoleReference}
-	if opts.WithNotes {
-		roles = append(roles, index.RoleNote)
+		opts.Limit = 12
 	}
 	hits, err := opts.Index.Search(ctx, index.SearchOptions{
-		Query: opts.Question, Limit: opts.Limit, Roles: roles, Embedder: opts.Embedder, Model: opts.EmbedModel,
+		Query: opts.Question, Limit: opts.Limit, Roles: []string{casefile.RoleCase, casefile.RoleReference}, Embedder: opts.Embedder, Model: opts.EmbedModel,
 	})
 	if err != nil {
 		return nil, err
+	}
+	if !opts.NoNotes {
+		notes, err := opts.Index.Search(ctx, index.SearchOptions{
+			Query: opts.Question, Limit: maxNotes, Roles: []string{index.RoleNote}, Embedder: opts.Embedder, Model: opts.EmbedModel,
+		})
+		if err != nil {
+			return nil, err
+		}
+		hits = append(hits, notes...)
+	}
+	// "The last email" needs the newest emails, which search does not rank.
+	if lang.AsksLatest(opts.Question) {
+		latest, err := opts.Index.Latest(ctx, 3)
+		if err != nil {
+			return nil, err
+		}
+		hits = append(latest, hits...)
 	}
 	res := &Result{Question: opts.Question, Model: opts.ChatModel, Sources: []Source{}, Cited: []int{}, Unknown: []int{}, Checks: []Check{}}
 	if len(hits) == 0 {
@@ -131,9 +150,12 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		h := g.hit
 		s := Source{N: i + 1, Cite: h.Cite, Path: h.Path, Origin: h.Origin, Page: h.Page, Role: h.Role}
 		res.Sources = append(res.Sources, s)
-		fmt.Fprintf(&b, "<source n=\"%d\" role=\"%s\" file=\"%s\"", s.N, s.Role, attr(s.Cite))
+		fmt.Fprintf(&b, "<source n=\"%d\" role=\"%s\" file=\"%s\" path=\"%s\"", s.N, s.Role, attr(s.Cite), attr(s.Path))
 		if h.Sender != "" {
 			fmt.Fprintf(&b, " sender=\"%s\"", attr(h.Sender))
+		}
+		if h.Date != "" {
+			fmt.Fprintf(&b, " date=\"%s\"", attr(h.Date))
 		}
 		b.WriteString(">\n")
 		for j, t := range g.texts {
@@ -155,7 +177,9 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		{Role: "system", Content: instruction},
 		{Role: "user", Content: b.String()},
 	}
-	chatOpts := models.ChatOptions{Temperature: 0.1, MaxTokens: 2048, Think: opts.Think}
+	// Temperature 0 and a fixed seed: the same question on the same case gives
+	// the same answer, so runs can be compared.
+	chatOpts := models.ChatOptions{Temperature: 0, Seed: 42, MaxTokens: 2048, Think: opts.Think}
 	answer, err := opts.Chat.Chat(ctx, opts.ChatModel, messages, chatOpts)
 	if err != nil {
 		return nil, err

@@ -24,6 +24,7 @@ import (
 	"github.com/AlfrescoLabs/openarch-docs/internal/casefile"
 	"github.com/AlfrescoLabs/openarch-docs/internal/lang"
 	"github.com/AlfrescoLabs/openarch-docs/internal/models"
+	"github.com/AlfrescoLabs/openarch-docs/internal/timeline"
 )
 
 // File is the index path, relative to the case folder.
@@ -405,8 +406,12 @@ const candidates = 50
 // rrfK is the constant of reciprocal rank fusion.
 const rrfK = 60
 
+// latestChunks is the number of chunks of each message that Latest returns:
+// the first one has the headers, the next ones the content.
+const latestChunks = 3
+
 // pageWeight is the weight of the lists of chunks from a page that the query names.
-const pageWeight = 3.0
+const pageWeight = 1.5
 
 // Search runs full text search and, with an Embedder, semantic search, and
 // merges the two lists with reciprocal rank fusion.
@@ -537,6 +542,56 @@ func foldAccents(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// Latest returns the newest email messages: for each of the n messages with
+// the latest date, outer emails and quoted messages alike, its first
+// latestChunks chunks, newest first.
+func (x *Index) Latest(ctx context.Context, n int) ([]Hit, error) {
+	rows, err := x.db.QueryContext(ctx, `SELECT id, date, cite FROM chunks WHERE kind = 'body' AND date != '' ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	type dated struct {
+		id   int64
+		when string // "2006-01-02T15:04"
+		cite string
+	}
+	var all []dated
+	for rows.Next() {
+		var d dated
+		var raw string
+		if err := rows.Scan(&d.id, &raw, &d.cite); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		// Quoted messages keep the date as the mail client wrote it.
+		if d.when = timeline.ParseDate(raw); d.when != "" {
+			all = append(all, d)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	slices.SortStableFunc(all, func(a, b dated) int { return strings.Compare(b.when, a.when) })
+	var hits []Hit
+	perMessage := map[string]int{}
+	for _, d := range all {
+		if _, ok := perMessage[d.cite]; !ok && len(perMessage) == n {
+			continue
+		}
+		if perMessage[d.cite] == latestChunks {
+			continue
+		}
+		perMessage[d.cite]++
+		h, err := x.hit(ctx, d.id)
+		if err != nil {
+			return nil, err
+		}
+		h.Matched = []string{"latest"}
+		hits = append(hits, h)
+	}
+	return hits, nil
 }
 
 // pageFilter returns an SQL condition that keeps the pages, or "" for all.

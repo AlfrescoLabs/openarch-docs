@@ -95,7 +95,7 @@ Models run on Docker Model Runner at `--model-url` (default `http://localhost:12
 
 ## Ask
 
-`ask` searches the index for the question (case documents and references; notes only with `--with-notes`), and gives the best chunks to the chat model of the profile as numbered sources. Each source is between `<source n="N" role="..." file="..." sender="...">` and `</source>`. Pieces of the same file become one source, labeled "part K of source N". Each source shows its role (`case`, `reference`, `note`), its citation and its sender. The question comes before and after the sources.
+`ask` searches the index for the question (12 case and reference chunks, and up to 3 notes, marked as interpretations; `--no-notes` leaves them out). When the question asks for the newest documents (`LatestWords` in `internal/lang`: "último", "latest", "dernier"), the first 3 chunks of each of the 3 newest messages join, outer emails and quoted messages alike, dated with the timeline date reader. The best chunks go to the chat model of the profile as numbered sources, at temperature 0 with a fixed seed, so a run can be repeated and compared. Each source is between `<source n="N" role="..." file="..." path="..." sender="..." date="...">` and `</source>`. Pieces of the same file become one source, labeled "part K of source N". Each source shows its role (`case`, `reference`, `note`), its citation and its sender. The question comes before and after the sources.
 
 The system message asks the model to answer in the language of the question, to cite a source for every fact as `[n]`, to say plainly when the sources do not hold the answer, to keep facts apart from interpretations, to treat notes as interpretations and references as rules, and to blame nobody without a source. The model makes no tool calls, so small models work. Thinking is off by default (`chat_template_kwargs.enable_thinking = false`; templates without it ignore it): GLM 4.7 Flash used all its tokens to think on long questions and wrote no answer. `--think` turns it on. An empty answer that stops for length is an error.
 
@@ -158,3 +158,7 @@ The Agent Skill `skills/openarch-docs/SKILL.md` is embedded in the binary; `skil
 - `collect <file>...` copies originals or derived files to `notes/outbox/<date>/` (or `--out`; inside the case folder only under `notes/outbox/`), naming attachments as the sender named them, and writes `collect.json` with the source, email, sender, date and SHA-256 of each file. Copies under `notes/` are never originals.
 
 The MCP server has `status` (read-only) and `collect` (writes only in `notes/outbox/`; left out with `--read-only`).
+
+## Eval
+
+`eval <questions-file>` runs `ask` on each question of a file and scores the answer: `Q:` a question, `E:` groups of expected words (`;` between groups, `|` between alternatives; each group needs one), `N:` forbidden words, `S:` skip with a reason. Words are compared in lower case without accents. Pass: every group and no forbidden word; partial: at least half the groups; else fail. The report lists the answer, the cited sources and the time of each question. Question files of private cases stay out of the repository.

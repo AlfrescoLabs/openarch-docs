@@ -52,17 +52,19 @@ func (r askResult) WriteText(w io.Writer) error {
 
 func newAskCmd(app *App) *cobra.Command {
 	var (
-		limit     int
-		withNotes bool
-		think     bool
+		limit   int
+		noNotes bool
+		think   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "ask <question>",
 		Short: "Answer a question about the case folder, with sources",
 		Long: `Answer a question with the local chat model of the profile.
 
-ask searches the index (case documents and references; notes too with
---with-notes), gives the model the best pieces as numbered sources, and asks
+ask searches the index (case documents and references, and up to 3 notes,
+marked as interpretations; --no-notes leaves them out), adds the newest
+emails when the question asks for the last one, gives the model the best
+pieces as numbered sources, and asks
 it to answer in the language of the question, citing a source for every fact
 as [n]. The model makes no tool calls, so small models work.
 
@@ -73,7 +75,7 @@ cited files.
 Run index first.`,
 		Example: `  openarch docs ask "¿Quién aportó las fotos de la solicitud?"
   openarch docs ask "What does the law say about charging points?" --limit 12
-  openarch docs ask "Qual é o estado do pedido?" --with-notes --output json`,
+  openarch docs ask "Qual é o estado do pedido?" --no-notes --output json`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := app.caseRoot()
@@ -94,7 +96,7 @@ Run index first.`,
 			defer func() { _ = x.Close() }()
 			client := app.modelClient()
 			res, err := ask.Run(cmd.Context(), ask.Options{
-				Question: strings.Join(args, " "), Limit: limit, WithNotes: withNotes, Think: think, Index: x,
+				Question: strings.Join(args, " "), Limit: limit, NoNotes: noNotes, Think: think, Index: x,
 				Embedder: client, EmbedModel: p.Embed, Chat: client, ChatModel: p.Chat,
 			})
 			if errors.Is(err, models.ErrNoAnswer) {
@@ -110,8 +112,8 @@ Run index first.`,
 			return app.Printer.Print(askResult{res})
 		},
 	}
-	cmd.Flags().IntVar(&limit, "limit", 8, "number of sources the model reads")
-	cmd.Flags().BoolVar(&withNotes, "with-notes", false, "add notes to the sources, marked as interpretations")
+	cmd.Flags().IntVar(&limit, "limit", 12, "number of sources the model reads")
+	cmd.Flags().BoolVar(&noNotes, "no-notes", false, "leave the notes out of the sources")
 	cmd.Flags().BoolVar(&think, "think", false, "let models that think before they answer (GLM 4.7 Flash) do so: slower")
 	return cmd
 }

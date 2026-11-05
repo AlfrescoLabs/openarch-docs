@@ -4,7 +4,7 @@ A plugin for the [openarch CLI](https://github.com/AlfrescoLabs/openarch-cli) to
 
 It stores the files in OpenArch, extracts their text, and answers questions about them with local models on Docker Model Runner. Nothing goes to the cloud.
 
-Status: early development. `init`, `add`, `status`, `collect`, `ingest`, `extract`, `describe`, `index`, `search`, `ask`, `timeline`, `look`, `sync`, `reindex`, `note`, `mcp`, `skill`, `verify` and `version` work today.
+Status: early development. `init`, `add`, `status`, `collect`, `eval`, `ingest`, `extract`, `describe`, `index`, `search`, `ask`, `timeline`, `look`, `sync`, `reindex`, `note`, `mcp`, `skill`, `verify` and `version` work today.
 
 ## Requirements
 
