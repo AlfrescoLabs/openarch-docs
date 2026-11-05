@@ -14,6 +14,7 @@ import (
 
 	"github.com/AlfrescoLabs/openarch-docs/internal/casefile"
 	"github.com/AlfrescoLabs/openarch-docs/internal/index"
+	"github.com/AlfrescoLabs/openarch-docs/internal/lang"
 	"github.com/AlfrescoLabs/openarch-docs/internal/models"
 )
 
@@ -76,6 +77,7 @@ Rules:
 - Sources marked "note" are earlier notes of the user: interpretations, not evidence. Prefer case sources.
 - Sources marked "reference" are laws or rules, not facts of the case.
 - Do not say that a person or a company is at fault unless a source says so.
+- When a fact comes from an email or a chat, say who wrote it. Never write "we" or "us" for a writer.
 
 Format: 1 to 5 plain sentences that answer the question. Put the source numbers after each sentence, like "The meter room is in the basement [3]."`
 
@@ -128,6 +130,11 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		fmt.Fprintf(&b, "%s\n\n", strings.Join(g.texts, "\n[...]\n"))
 	}
 	fmt.Fprintf(&b, "Question: %s", opts.Question)
+	// Models often answer in English when told to use "the language of the
+	// question", so name the language.
+	if l, ok := lang.Detect(opts.Question); ok {
+		fmt.Fprintf(&b, "\n\nAnswer in %s.", l.Name)
+	}
 	messages := []models.Message{
 		{Role: "system", Content: instruction},
 		{Role: "user", Content: b.String()},

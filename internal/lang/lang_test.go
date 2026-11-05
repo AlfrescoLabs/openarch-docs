@@ -102,3 +102,21 @@ func TestMonths(t *testing.T) {
 		}
 	}
 }
+
+func TestDetect(t *testing.T) {
+	for text, want := range map[string]string{
+		"¿Quién aportó las fotos de la solicitud?":          "es",
+		"Who sent the photos of the request?":               "en",
+		"Qui a envoyé les photos de la demande ?":           "fr",
+		"Quem enviou as fotos do pedido? Não sei.":          "pt",
+		"Where is the meter room and who has the key to it": "en",
+	} {
+		l, ok := Detect(text)
+		if !ok || l.Code != want {
+			t.Errorf("Detect(%q) = %q, %v, want %q", text, l.Code, ok, want)
+		}
+	}
+	if _, ok := Detect("12345 ???"); ok {
+		t.Error("no language in numbers")
+	}
+}

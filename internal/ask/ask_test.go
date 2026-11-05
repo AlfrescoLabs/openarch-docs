@@ -81,7 +81,7 @@ func TestRun(t *testing.T) {
 		t.Fatalf("messages = %+v", chat.messages)
 	}
 	user := chat.messages[1].Content
-	for _, want := range []string{`(case) aviso.eml, email "Plano"`, "Sender: Ana <ana@example.com>", "(reference) ley.txt", "Question: ¿Dónde está el sotano?"} {
+	for _, want := range []string{`(case) aviso.eml, email "Plano"`, "Sender: Ana <ana@example.com>", "(reference) ley.txt", "Question: ¿Dónde está el sotano?", "Answer in Spanish."} {
 		if !strings.Contains(user, want) {
 			t.Errorf("user message has no %q:\n%s", want, user)
 		}

@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Language is the data for one language.
@@ -136,6 +139,38 @@ func AllStopWords() map[string]bool {
 		}
 	}
 	return out
+}
+
+// Detect returns the language of a text: the one with the most stop words in
+// it. It returns false when the text has no stop words.
+func Detect(text string) (Language, bool) {
+	words := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) })
+	best, bestN := -1, 0
+	for i, l := range All {
+		n := 0
+		for _, w := range words {
+			if slices.Contains(l.StopWords, fold(w)) {
+				n++
+			}
+		}
+		if n > bestN {
+			best, bestN = i, n
+		}
+	}
+	if best < 0 {
+		return Language{}, false
+	}
+	return All[best], true
+}
+
+func fold(s string) string {
+	var b strings.Builder
+	for _, r := range norm.NFD.String(s) {
+		if !unicode.Is(unicode.Mn, r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // MonthNumbers maps every month name and short form of every language,
