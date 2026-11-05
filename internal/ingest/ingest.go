@@ -59,7 +59,19 @@ const (
 	StatusAdded     = "added"
 	StatusChanged   = "changed"
 	StatusUnchanged = "unchanged"
+	// StatusReparsed means a newer parser wrote the derived files again.
+	StatusReparsed = "reparsed"
 )
+
+// ParserVersion grows when the email or zip parser writes different derived
+// files. Originals ingested with an older parser are parsed again.
+//
+//	1: first release
+//	2: Windows-1252 text labeled ISO-8859-1, HTML entities in plain text
+const ParserVersion = 2
+
+// ingestKinds are the kinds of derived files that ingest writes.
+var ingestKinds = []string{KindBody, KindHTML, KindAttachment, KindInline, KindMessage, KindChat, KindChatJSON, KindMedia, KindZipEntry}
 
 // Result is the outcome of an ingest run.
 type Result struct {
@@ -68,6 +80,7 @@ type Result struct {
 	Files    []File `json:"files"`
 	Added    int    `json:"added"`
 	Changed  int    `json:"changed"`
+	Reparsed int    `json:"reparsed"`
 	Derived  int    `json:"derived"`
 	Manifest string `json:"manifest"`
 }
@@ -96,6 +109,8 @@ func Run(opts Options) (*Result, error) {
 			res.Added++
 		case StatusChanged:
 			res.Changed++
+		case StatusReparsed:
+			res.Reparsed++
 		}
 		res.Derived += f.Derived
 		res.Files = append(res.Files, f)
@@ -104,7 +119,7 @@ func Run(opts Options) (*Result, error) {
 		return res, nil
 	}
 	_, err = os.Stat(filepath.Join(opts.Root, filepath.FromSlash(casefile.ManifestFile)))
-	if res.Added == 0 && res.Changed == 0 && err == nil {
+	if res.Added == 0 && res.Changed == 0 && res.Reparsed == 0 && err == nil {
 		return res, nil
 	}
 	return res, casefile.Save(opts.Root, m)
@@ -116,24 +131,36 @@ func ingestFile(opts Options, m *casefile.Manifest, p string) (File, error) {
 		return File{}, err
 	}
 	f := File{Path: p, Kind: casefile.KindOf(p), Role: casefile.RoleOf(p), Status: StatusAdded}
+	parsed := f.Kind == casefile.KindEmail || f.Kind == casefile.KindZip
 	if old, ok := m.Original(p); ok {
-		if old.SHA256 == sum {
+		switch {
+		case old.SHA256 != sum:
+			f.Status = StatusChanged
+		case old.Parser >= ParserVersion || !parsed:
 			f.Status = StatusUnchanged
 			return f, nil
+		default:
+			f.Status = StatusReparsed
 		}
-		f.Status = StatusChanged
 	}
 	if opts.DryRun {
 		return f, nil
 	}
-	if f.Status == StatusChanged {
+	switch f.Status {
+	case StatusChanged:
 		if err := m.RemoveDerived(opts.Root, func(d casefile.Derived) bool { return d.Source == p }); err != nil {
 			return File{}, err
 		}
-		m.Originals = slices.DeleteFunc(m.Originals, func(o casefile.Original) bool { return o.Path == p })
+	case StatusReparsed:
+		// Keep the extract results: they are slow to make, and the files
+		// they come from get the same paths again.
+		if err := m.RemoveDerived(opts.Root, func(d casefile.Derived) bool { return d.Source == p && slices.Contains(ingestKinds, d.Kind) }); err != nil {
+			return File{}, err
+		}
 	}
+	m.Originals = slices.DeleteFunc(m.Originals, func(o casefile.Original) bool { return o.Path == p })
 	m.Originals = append(m.Originals, casefile.Original{
-		Path: p, SHA256: sum, Size: size, Kind: f.Kind, Role: f.Role, IngestedAt: opts.Now().UTC().Truncate(time.Second),
+		Path: p, SHA256: sum, Size: size, Kind: f.Kind, Role: f.Role, IngestedAt: opts.Now().UTC().Truncate(time.Second), Parser: ParserVersion,
 	})
 	w := &writer{root: opts.Root, manifest: m, source: p,
 		dir: casefile.DerivedDir(p, sum)}
@@ -157,6 +184,16 @@ func ingestFile(opts Options, m *casefile.Manifest, p string) (File, error) {
 		}
 	}
 	f.Derived = w.count
+	if f.Status == StatusReparsed {
+		// Drop extract results of files that the new parser no longer writes.
+		kept := map[string]bool{p: true}
+		for _, d := range m.Derived {
+			kept[d.Path] = true
+		}
+		if err := m.RemoveDerived(opts.Root, func(d casefile.Derived) bool { return d.Source == p && d.From != "" && !kept[d.From] }); err != nil {
+			return File{}, err
+		}
+	}
 	return f, nil
 }
 

@@ -114,3 +114,24 @@ func TestForwardedLanguages(t *testing.T) {
 		}
 	}
 }
+
+func TestWindows1252AndEntities(t *testing.T) {
+	raw := "From: =?ISO-8859-1?Q?Ana_=96_Oficina?= <ana@example.com>\r\n" +
+		"Subject: =?iso-8859-1?Q?Solicitud_=96_Finalizaci=F3n?=\r\n" +
+		"Content-Type: text/plain; charset=iso-8859-1\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n" +
+		"Precio =80 100 =96 IVA incluido.\r\n---------- Forwarded message ---------\r\nFrom: Luis &lt;luis@example.org&gt;\r\nDate: 1 nov 2026\r\nSubject: Plano &amp; fotos\r\n"
+	m, err := Parse(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Info.Subject != "Solicitud – Finalización" || m.Info.From != "Ana – Oficina <ana@example.com>" {
+		t.Errorf("info = %+v", m.Info)
+	}
+	if !strings.HasPrefix(m.Text, "Precio € 100 – IVA incluido.") {
+		t.Errorf("text = %q", m.Text)
+	}
+	f := Forwarded(m.Text)
+	if len(f) != 1 || f[0].From != "Luis <luis@example.org>" || f[0].Subject != "Plano & fotos" {
+		t.Errorf("forwarded = %+v", f)
+	}
+}

@@ -24,8 +24,8 @@ func (r ingestResult) WriteText(w io.Writer) error {
 	if r.DryRun {
 		verb = "Would ingest"
 	}
-	_, err := fmt.Fprintf(w, "%s %d new and %d changed files, %d unchanged. %d derived files. Manifest: %s\n",
-		verb, r.Added, r.Changed, len(r.Files)-r.Added-r.Changed, r.Derived, r.Manifest)
+	_, err := fmt.Fprintf(w, "%s %d new, %d changed and %d reparsed files, %d unchanged. %d derived files. Manifest: %s\n",
+		verb, r.Added, r.Changed, r.Reparsed, len(r.Files)-r.Added-r.Changed-r.Reparsed, r.Derived, r.Manifest)
 	return err
 }
 
@@ -51,7 +51,8 @@ extracted/manifest.json and writes derived files to extracted/<name>-<hash>/:
 - Other zips: their files in files/.
 
 Run it again after you add files: unchanged files are skipped. A changed
-original gets new derived files.`,
+original gets new derived files. When a new release parses emails or zips
+better, ingest parses them again and keeps the extract results.`,
 		Example: `  openarch docs ingest
   openarch docs ingest --case ~/cases/garage --dry-run
   openarch docs ingest --output json`,

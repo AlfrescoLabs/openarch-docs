@@ -17,9 +17,11 @@ import (
 	"unicode"
 
 	// Registers the "sqlite" database/sql driver (pure Go).
+	"golang.org/x/text/unicode/norm"
 	_ "modernc.org/sqlite"
 
 	"github.com/AlfrescoLabs/openarch-docs/internal/casefile"
+	"github.com/AlfrescoLabs/openarch-docs/internal/lang"
 	"github.com/AlfrescoLabs/openarch-docs/internal/models"
 )
 
@@ -431,7 +433,7 @@ func (x *Index) searchText(ctx context.Context, query string) ([]int64, error) {
 	words := strings.FieldsFunc(query, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 	var terms []string
 	for _, w := range words {
-		if len([]rune(w)) >= 2 {
+		if len([]rune(w)) >= 2 && !stopWords[foldAccents(strings.ToLower(w))] {
 			terms = append(terms, `"`+w+`"`)
 		}
 	}
@@ -453,6 +455,20 @@ func (x *Index) searchText(ctx context.Context, query string) ([]int64, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// stopWords are ignored by full text search, in every supported language.
+var stopWords = lang.AllStopWords()
+
+// foldAccents removes accents, as the FTS5 tokenizer does.
+func foldAccents(s string) string {
+	var b strings.Builder
+	for _, r := range norm.NFD.String(s) {
+		if !unicode.Is(unicode.Mn, r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // searchMeaning returns chunk ids by cosine similarity to the query.

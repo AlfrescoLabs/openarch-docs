@@ -212,3 +212,58 @@ func TestRunDryRun(t *testing.T) {
 		t.Error("dry run wrote the manifest")
 	}
 }
+
+func TestRunReparse(t *testing.T) {
+	root := newCase(t)
+	if _, err := Run(Options{Root: root, Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := casefile.Load(root)
+	att, _ := derived(m, "/message-1/attachments/Condiciones técnicas.pdf")
+	// An extract result of an attachment, and one of a file the parser no longer writes.
+	page := casefile.Derived{Source: att.Source, From: att.Path, Kind: "page-text", Page: 1}
+	if _, err := m.WriteDerived(root, att.Path+".extract/page-001.txt", []byte("texto"), page); err != nil {
+		t.Fatal(err)
+	}
+	gone := casefile.Derived{Source: att.Source, From: att.Path + "-old.pdf", Kind: "page-text", Page: 1}
+	goneP, err := m.WriteDerived(root, att.Path+"-old.pdf.extract/page-001.txt", []byte("viejo"), gone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Mark every original as parsed by version 1.
+	for i := range m.Originals {
+		m.Originals[i].Parser = 1
+	}
+	if err := casefile.Save(root, m); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Run(Options{Root: root, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The email and the two zips are parsed again; the PDFs are not.
+	if res.Reparsed != 3 || res.Added != 0 || res.Changed != 0 {
+		t.Fatalf("result = %+v", res)
+	}
+	m, _ = casefile.Load(root)
+	if _, ok := derived(m, "Condiciones técnicas.pdf.extract/page-001.txt"); !ok {
+		t.Error("extract result of a file that still exists was dropped")
+	}
+	if _, ok := derived(m, "-old.pdf.extract/page-001.txt"); ok {
+		t.Error("extract result of a file that is gone was kept")
+	}
+	if _, err := os.Stat(filepath.Join(root, goneP)); !os.IsNotExist(err) {
+		t.Error("file of the dropped result still exists")
+	}
+	for _, o := range m.Originals {
+		if (o.Kind == casefile.KindEmail || o.Kind == casefile.KindZip) && o.Parser != ParserVersion {
+			t.Errorf("%s parser = %d", o.Path, o.Parser)
+		}
+	}
+	// Nothing to do the next time.
+	again, err := Run(Options{Root: root, Now: now})
+	if err != nil || again.Reparsed != 0 {
+		t.Errorf("again = %+v, %v", again, err)
+	}
+}

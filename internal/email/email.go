@@ -71,8 +71,8 @@ func parse(r io.Reader, depth int) (*Message, error) {
 	if err := walk(e, "", depth, m, &text, &html); err != nil {
 		return nil, err
 	}
-	m.Text = strings.TrimSpace(strings.Join(text, "\n\n"))
-	m.HTML = strings.Join(html, "\n")
+	m.Text = fixC1(strings.TrimSpace(strings.Join(text, "\n\n")))
+	m.HTML = fixC1(strings.Join(html, "\n"))
 	if m.Text == "" && m.HTML != "" {
 		m.Text = HTMLToText(m.HTML)
 	}
@@ -103,7 +103,7 @@ func walk(e *message.Entity, number string, depth int, m *Message, text, html *[
 					if err != nil {
 						return err
 					}
-					altText = string(b)
+					altText = unescapePlain(string(b))
 					continue
 				case "text/html":
 					b, err := io.ReadAll(p.Body)
@@ -158,7 +158,7 @@ func walk(e *message.Entity, number string, depth int, m *Message, text, html *[
 		}
 		m.Nested = append(m.Nested, Nested{Number: number, Raw: data, Message: nested})
 	case mt == "text/plain" && !isAttachment(e.Header):
-		*text = append(*text, string(data))
+		*text = append(*text, unescapePlain(string(data)))
 	case mt == "text/html" && !isAttachment(e.Header):
 		*html = append(*html, string(data))
 		*text = append(*text, HTMLToText(string(data)))
@@ -173,7 +173,7 @@ func walk(e *message.Entity, number string, depth int, m *Message, text, html *[
 		m.Parts = append(m.Parts, Part{
 			Number:    number,
 			MediaType: mt,
-			Filename:  filename,
+			Filename:  fixC1(filename),
 			Inline:    disp == "inline" || (disp == "" && e.Header.Get("Content-Id") != ""),
 			Data:      data,
 		})
@@ -206,6 +206,9 @@ func headerInfo(h mail.Header) casefile.MessageInfo {
 		info.Date = d.Format(time.RFC3339)
 	} else {
 		info.Date = h.Get("Date")
+	}
+	for _, f := range []*string{&info.From, &info.To, &info.Cc, &info.Subject} {
+		*f = fixC1(*f)
 	}
 	return info
 }

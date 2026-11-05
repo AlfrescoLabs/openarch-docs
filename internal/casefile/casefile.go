@@ -69,6 +69,8 @@ type Original struct {
 	Kind       string    `json:"kind"`
 	Role       string    `json:"role"`
 	IngestedAt time.Time `json:"ingestedAt"`
+	// Parser is the version of the email and zip parser that wrote the derived files.
+	Parser int `json:"parser,omitempty"`
 }
 
 // Derived is a file the plugin wrote from an original.

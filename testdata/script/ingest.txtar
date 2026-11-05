@@ -4,7 +4,7 @@ cd case
 
 # Dry run writes nothing.
 exec openarch-docs ingest --dry-run
-stdout '^Would ingest 2 new and 0 changed files'
+stdout '^Would ingest 2 new, 0 changed and 0 reparsed files'
 ! exists extracted/manifest.json
 
 exec openarch-docs ingest

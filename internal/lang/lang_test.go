@@ -54,3 +54,27 @@ func mapValues(m map[string]string) []string {
 	}
 	return out
 }
+
+func TestStopWords(t *testing.T) {
+	sw := AllStopWords()
+	for _, w := range []string{"the", "de", "que", "les", "nao"} {
+		if !sw[w] {
+			t.Errorf("%q is not a stop word", w)
+		}
+	}
+	for _, l := range All {
+		for _, w := range l.StopWords {
+			for _, r := range w {
+				if r > 127 {
+					t.Errorf("%s stop word %q has an accent; write it folded", l.Code, w)
+				}
+			}
+		}
+	}
+	// Question words that carry meaning stay searchable.
+	for _, w := range []string{"quien", "fotos", "donde", "where", "quand", "onde"} {
+		if sw[w] {
+			t.Errorf("%q must not be a stop word", w)
+		}
+	}
+}

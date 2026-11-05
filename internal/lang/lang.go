@@ -28,6 +28,8 @@ type Language struct {
 	// ChatFileAttached are the words of a WhatsApp Android attachment line:
 	// "IMG-....jpg (file attached)".
 	ChatFileAttached []string
+	// StopWords are short common words that full text search ignores.
+	StopWords []string
 }
 
 // All lists the supported languages.
@@ -40,6 +42,7 @@ var All = []Language{
 		},
 		ChatAttached:     []string{"attached"},
 		ChatFileAttached: []string{"file attached"},
+		StopWords:        []string{"the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "by", "for", "with", "from", "is", "are", "was", "were", "be", "been", "it", "its", "this", "that", "these", "those", "as", "not", "no", "but", "if", "so", "do", "does", "did", "has", "have", "had", "i", "you", "he", "she", "we", "they", "me", "my", "your", "our", "their"},
 	},
 	{
 		Code: "es", Name: "Spanish", Tesseract: "spa",
@@ -49,6 +52,7 @@ var All = []Language{
 		},
 		ChatAttached:     []string{"adjunto"},
 		ChatFileAttached: []string{"archivo adjunto"},
+		StopWords:        []string{"el", "la", "los", "las", "un", "una", "unos", "unas", "y", "o", "u", "de", "del", "al", "a", "en", "con", "por", "para", "sin", "sobre", "es", "son", "era", "fue", "ser", "estar", "esta", "este", "esto", "estos", "estas", "ese", "esa", "eso", "lo", "le", "les", "se", "su", "sus", "mi", "mis", "tu", "tus", "que", "muy", "mas", "pero", "si", "no", "ya", "hay", "me", "te", "nos", "os", "ha", "han", "he"},
 	},
 	{
 		Code: "fr", Name: "French", Tesseract: "fra",
@@ -58,6 +62,7 @@ var All = []Language{
 		},
 		ChatAttached:     []string{"pièce jointe"},
 		ChatFileAttached: []string{"fichier joint"},
+		StopWords:        []string{"le", "la", "les", "un", "une", "des", "et", "ou", "de", "du", "au", "aux", "a", "en", "dans", "sur", "par", "pour", "avec", "sans", "est", "sont", "etait", "etre", "ce", "cet", "cette", "ces", "se", "sa", "son", "ses", "mon", "ma", "mes", "ton", "ta", "tes", "que", "qui", "ou", "ne", "pas", "plus", "mais", "si", "il", "elle", "ils", "elles", "nous", "vous", "je", "tu", "on", "y"},
 	},
 	{
 		Code: "pt", Name: "Portuguese", Tesseract: "por",
@@ -67,6 +72,7 @@ var All = []Language{
 		},
 		ChatAttached:     []string{"anexado", "anexo"},
 		ChatFileAttached: []string{"arquivo anexado", "ficheiro anexado"},
+		StopWords:        []string{"o", "a", "os", "as", "um", "uma", "uns", "umas", "e", "ou", "de", "do", "da", "dos", "das", "ao", "aos", "em", "no", "na", "nos", "nas", "por", "para", "com", "sem", "sobre", "e", "sao", "era", "foi", "ser", "estar", "este", "esta", "isto", "esse", "essa", "isso", "se", "seu", "sua", "seus", "suas", "meu", "minha", "que", "muito", "mais", "mas", "sim", "nao", "ja", "ha", "me", "te", "lhe"},
 	},
 }
 
@@ -109,6 +115,17 @@ func Headers() map[string]string {
 	for _, l := range All {
 		for k, v := range l.Headers {
 			out[k] = v
+		}
+	}
+	return out
+}
+
+// AllStopWords returns the stop words of every language, without accents.
+func AllStopWords() map[string]bool {
+	out := map[string]bool{}
+	for _, l := range All {
+		for _, w := range l.StopWords {
+			out[w] = true
 		}
 	}
 	return out
