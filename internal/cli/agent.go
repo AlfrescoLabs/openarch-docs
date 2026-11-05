@@ -27,10 +27,12 @@ func newMCPCmd(app *App) *cobra.Command {
   files       list files with their provenance (attachments, photos, pages)
   timeline    emails, quoted forwards and chat messages in time order
   look        ask the vision model about images (not with --no-vision)
+  status      what is left to do in the case folder
   verify      check the checksums
   note_write  write a note in notes/ (not with --read-only)
+  collect     copy files to attach into notes/outbox/ (not with --read-only)
 
-Every tool reads, except note_write, which writes only in notes/. The tools
+Every tool reads, except note_write and collect, which write only in notes/. The tools
 use the models of --profile. Prepare the case folder first: ingest, extract,
 describe and index.`,
 		Example: `  openarch docs mcp
@@ -61,7 +63,7 @@ describe and index.`,
 		},
 	}
 	f := cmd.Flags()
-	f.BoolVar(&readOnly, "read-only", false, "leave out note_write")
+	f.BoolVar(&readOnly, "read-only", false, "leave out note_write and collect")
 	f.BoolVar(&noVision, "no-vision", false, "leave out look")
 	f.BoolVar(&noEmbed, "no-embed", false, "search by words only, without the embedding model")
 	return cmd

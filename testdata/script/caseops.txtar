@@ -1,0 +1,47 @@
+# init makes the layout
+exec openarch-docs init caso
+stdout 'created  AGENTS.md'
+exists caso/references caso/pasted caso/notes/drafts caso/.claude/skills/openarch-docs/SKILL.md
+
+# add a file from outside, a reference with its URL, and pasted text
+exec openarch-docs add --case caso fuera/respuesta.txt
+stdout '^added +respuesta.txt \(copied\)$'
+exec openarch-docs add --case caso --reference fuera/ley.txt --source-url https://example.org/ley
+stdout '^added +references/ley.txt \(copied\)$'
+stdin pegado.txt
+exec openarch-docs add --case caso --text --name ultima-actualizacion --note 'pegado de Gmail'
+stdout '^added +pasted/ultima-actualizacion.txt \(pasted\)$'
+grep '"sourceUrl": "https://example.org/ley"' caso/extracted/manifest.json
+grep '"how": "pasted"' caso/extracted/manifest.json
+! exec openarch-docs add --case caso
+stderr 'nothing to add'
+! exec openarch-docs add --case caso caso/respuesta.txt
+stderr 'already in the case folder'
+
+# status: indexing is next
+exec openarch-docs status --case caso
+stdout '3 originals'
+stdout 'Next: openarch docs index'
+exec openarch-docs index --case caso --no-embed
+exec openarch-docs status --case caso -o json
+stdout '"next": "index"'
+stdout '"detail": "chunks without embeddings"'
+
+# collect copies originals into notes/outbox, and they stay out of the originals
+exec openarch-docs collect --case caso respuesta.txt --out notes/outbox/envio
+stdout 'Collected 1 files in notes/outbox/envio'
+exists caso/notes/outbox/envio/respuesta.txt caso/notes/outbox/envio/collect.json
+! exec openarch-docs collect --case caso respuesta.txt --out references
+stderr 'only in notes/outbox'
+exec openarch-docs verify --case caso
+stdout '0 new files'
+
+-- fuera/respuesta.txt --
+Respuesta de la distribuidora.
+-- fuera/ley.txt --
+Articulo 1. Texto de ejemplo.
+-- pegado.txt --
+De: Ana
+Asunto: Ultima actualizacion
+
+Seguimos adelante con las nuevas condiciones.

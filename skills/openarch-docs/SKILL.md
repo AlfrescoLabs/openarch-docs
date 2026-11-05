@@ -18,7 +18,7 @@ A case folder holds original documents. `openarch docs` has already unpacked the
 - An email often quotes other emails. Say who wrote each quoted part.
 - You cannot see images. Use `look` for photos, plans and PDF pages, and say that the vision model can be wrong.
 - The tools are offline. When a fact needs a document that is not in the folder (a law, a cadastre map), say which document to add: laws go in `references/`, other files in the case folder.
-- Write only with `note_write`, in `notes/`. Drafts go in `notes/drafts/`. Never change case documents.
+- Write only with `note_write` and `collect`, in `notes/`. Drafts go in `notes/drafts/`. Never change case documents.
 - Answer and write in the language of the user. Keep accents and special letters (ñ, ç, ã).
 
 ## Tools
@@ -31,6 +31,8 @@ A case folder holds original documents. `openarch docs` has already unpacked the
 | Dates and order of events | `timeline` |
 | What a photo or plan shows, or compare images | `look` with paths, or `<pdf path>#<page>` |
 | Save a status note, timeline or email draft | `note_write` |
+| Gather the files to attach to an email | `collect` (copies to `notes/outbox/<date>/` with their real names) |
+| Know if the case is ready, or what to run | `status` |
 | Check that the originals did not change | `verify` |
 
 ## Work flow
@@ -44,8 +46,9 @@ A case folder holds original documents. `openarch docs` has already unpacked the
 
 The same work from a shell, for people:
 
-- `openarch docs ingest`, `extract`, `describe`, `index`: prepare a case folder, in this order.
+- `openarch docs init <folder>` makes a case folder. `openarch docs add <file>` or `add --text` (pasted text) adds documents with where they came from; `add --reference` for laws.
+- `openarch docs ingest`, `extract`, `describe`, `index`: prepare a case folder, in this order. `openarch docs status` tells what is left.
 - `openarch docs search "..."`, `ask "..."`, `timeline`, `look <images> -q "..."`.
-- `openarch docs note write drafts/reply.md < text.md`.
+- `openarch docs note write drafts/reply.md < text.md`, `openarch docs collect <files>`.
 - `openarch docs sync` uploads the case to OpenArch; `reindex` rebuilds it from OpenArch.
 - Every command takes `--output json`. Run `openarch docs <command> --help` for flags.

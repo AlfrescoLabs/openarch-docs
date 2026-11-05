@@ -1,6 +1,6 @@
 // Package mcptools is the MCP server of openarch-docs: tools that let an
 // agent search and read a case folder, look at its images, and write notes.
-// Every tool reads, except note_write, which writes only in notes/.
+// Every tool reads, except note_write and collect, which write only in notes/.
 package mcptools
 
 import (
@@ -17,6 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/AlfrescoLabs/openarch-docs/internal/casefile"
+	"github.com/AlfrescoLabs/openarch-docs/internal/caseops"
 	"github.com/AlfrescoLabs/openarch-docs/internal/index"
 	"github.com/AlfrescoLabs/openarch-docs/internal/notes"
 	"github.com/AlfrescoLabs/openarch-docs/internal/timeline"
@@ -38,7 +39,7 @@ type Options struct {
 	// Vision and VisionModel answer look. Nil removes the tool.
 	Vision      vision.Chatter
 	VisionModel string
-	// ReadOnly removes note_write.
+	// ReadOnly removes note_write and collect.
 	ReadOnly bool
 }
 
@@ -54,6 +55,7 @@ func New(opts Options) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "files", Annotations: ro, Description: "List the files of the case folder with their provenance: originals, email bodies, attachments, inline images, chat photos, page images and texts. " +
 		"Filter by kind (for example attachment, media, page-image, description) or by a path prefix. Use it to find photos, plans and attachments, and who sent them."}, t.files)
 	mcp.AddTool(s, &mcp.Tool{Name: "timeline", Annotations: ro, Description: "List the emails, the forwarded messages quoted in emails and the chat messages, oldest first, with sender, subject and file path. Dates are YYYY-MM-DD."}, t.timeline)
+	mcp.AddTool(s, &mcp.Tool{Name: "status", Annotations: ro, Description: "Show what is left to do in the case folder: files to ingest, extract, describe, index or sync. Use it to know if the case is ready, and tell the person the command to run."}, t.status)
 	mcp.AddTool(s, &mcp.Tool{Name: "verify", Annotations: ro, Description: "Check that the originals and derived files of the case folder still match their SHA-256 checksums."}, t.verify)
 	if opts.Vision != nil {
 		mcp.AddTool(s, &mcp.Tool{Name: "look", Annotations: ro, Description: "Ask the local vision model one question about one or more images of the case folder: photos, plans, screenshots, or PDF pages given as <pdf path>#<page>. " +
@@ -62,7 +64,10 @@ func New(opts Options) *mcp.Server {
 	if !opts.ReadOnly {
 		mcp.AddTool(s, &mcp.Tool{Name: "note_write", Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(false)},
 			Description: "Write a Markdown note or draft in the notes/ folder of the case, such as a status note, a timeline or an email draft (drafts/reply.md). " +
-				"This is the only tool that writes. It never changes case documents. A name that exists needs overwrite: true."}, t.noteWrite)
+				"It never changes case documents. A name that exists needs overwrite: true."}, t.noteWrite)
+		mcp.AddTool(s, &mcp.Tool{Name: "collect", Annotations: &mcp.ToolAnnotations{DestructiveHint: boolPtr(false)},
+			Description: "Copy the files a person must attach to an email into notes/outbox/<date>/, with the names they had as attachments, and a collect.json with where each came from. " +
+				"Give paths from files or search: originals or files in extracted/. It never changes case documents."}, t.collect)
 	}
 	return s
 }
@@ -300,6 +305,38 @@ func (t *tools) look(ctx context.Context, _ *mcp.CallToolRequest, in LookInput) 
 		return toolError(errors.New("give at most 4 images"))
 	}
 	res, err := vision.Look(ctx, t.opts.Root, t.opts.Vision, t.opts.VisionModel, in.Question, in.Images)
+	if err != nil {
+		return toolError(err)
+	}
+	return result(res)
+}
+
+// StatusInput is the input of status: nothing.
+type StatusInput struct{}
+
+func (t *tools) status(ctx context.Context, _ *mcp.CallToolRequest, _ StatusInput) (*mcp.CallToolResult, any, error) {
+	st, err := caseops.GetStatus(ctx, t.opts.Root)
+	if err != nil {
+		return toolError(err)
+	}
+	return result(st)
+}
+
+// CollectInput is the input of collect.
+type CollectInput struct {
+	Files []string `json:"files" jsonschema:"paths in the case folder: originals or files in extracted/"`
+}
+
+func (t *tools) collect(_ context.Context, _ *mcp.CallToolRequest, in CollectInput) (*mcp.CallToolResult, any, error) {
+	refs := make([]string, len(in.Files))
+	for i, f := range in.Files {
+		p, err := t.clean(f)
+		if err != nil {
+			return toolError(err)
+		}
+		refs[i] = p
+	}
+	res, err := caseops.Collect(caseops.CollectOptions{Root: t.opts.Root, Refs: refs})
 	if err != nil {
 		return toolError(err)
 	}

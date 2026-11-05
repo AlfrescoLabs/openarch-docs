@@ -155,6 +155,17 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	return res, nil
 }
 
+// Pending returns the number of PDFs and images that extract would read.
+func Pending(m *casefile.Manifest) int {
+	n := 0
+	for _, t := range targets(m) {
+		if supported(t.path) && !hasResults(m, t.path) {
+			n++
+		}
+	}
+	return n
+}
+
 // targets lists the PDFs and images among the originals and the files that
 // ingest unpacked.
 func targets(m *casefile.Manifest) []target {

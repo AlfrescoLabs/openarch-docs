@@ -5,7 +5,7 @@
 ## Rules
 
 1. **Local models only.** Chat, vision and embeddings run on Docker Model Runner. No cloud calls.
-2. **Offline.** The plugin never downloads documents. Law texts and screenshots are files the user adds to the case folder.
+2. **Offline.** The plugin never downloads documents. Law texts and screenshots are files the user adds to the case folder, with `add` (and `--source-url` to record where they came from).
 3. **OpenArch is required.** It is the store of record for originals and derived files. The local index is a cache that can be rebuilt from OpenArch.
 4. **Originals never change.** Every original has a SHA-256 checksum. Every derived file records its source file and, when it applies, the attachment name and the message headers.
 5. **Only Docker on the host.** Text extraction, page rendering and OCR run in the plugin tools image with no network.
@@ -148,3 +148,12 @@ The plugin talks to OpenArch only by running `openarch ... --output json --non-i
 The Agent Skill `skills/openarch-docs/SKILL.md` is embedded in the binary; `skill install` writes it to `<dir>/.claude/skills/openarch-docs/SKILL.md` (default: the case folder; hidden folders are never originals) and replaces a changed file only with `--force`.
 
 `examples/agent` runs Docker Agent with the MCP server as its only toolset and `skills: true`, on a synthetic sample case, and checks the folder after the run.
+
+## Init, add, status and collect
+
+- `init [folder]` makes `references/`, `pasted/`, `notes/` and `notes/drafts/`, writes `AGENTS.md` (rules for people and agents: layout, citations, facts apart from interpretations, privacy) and installs the skill. It never changes a file that exists.
+- `add <file>...` copies files from outside the case folder (into the case folder, `--dir`, or `references/` with `--reference`); `add --text` saves stdin in `pasted/`. Then it ingests, and records `added` in the manifest entry of each original: `how` (`copied` or `pasted`), `from`, `sourceUrl`, `note`, `at`. Ingest keeps `added` when it parses a file again. A file with the same name and other content is an error; the same content is fine. `extracted/`, `notes/`, hidden folders and paths outside the case are refused.
+- `status` counts, with the `Pending` functions of each package, the files left for `ingest`, `extract`, `describe`, `index` (texts, or chunks without embeddings) and `sync`, plus `verify` problems, and names the next command. It needs no model and no OpenArch.
+- `collect <file>...` copies originals or derived files to `notes/outbox/<date>/` (or `--out`; inside the case folder only under `notes/outbox/`), naming attachments as the sender named them, and writes `collect.json` with the source, email, sender, date and SHA-256 of each file. Copies under `notes/` are never originals.
+
+The MCP server has `status` (read-only) and `collect` (writes only in `notes/outbox/`; left out with `--read-only`).

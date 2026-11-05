@@ -71,6 +71,20 @@ type Original struct {
 	IngestedAt time.Time `json:"ingestedAt"`
 	// Parser is the version of the email and zip parser that wrote the derived files.
 	Parser int `json:"parser,omitempty"`
+	// Added tells how 'add' put the file in the case folder.
+	Added *Added `json:"added,omitempty"`
+}
+
+// Added is the provenance of a file that 'add' put in the case folder.
+type Added struct {
+	At time.Time `json:"at"`
+	// How is "copied" or "pasted".
+	How string `json:"how"`
+	// From is the path the file was copied from.
+	From string `json:"from,omitempty"`
+	// SourceURL is where the user got the file, such as the page of a law.
+	SourceURL string `json:"sourceUrl,omitempty"`
+	Note      string `json:"note,omitempty"`
 }
 
 // Derived is a file the plugin wrote from an original.

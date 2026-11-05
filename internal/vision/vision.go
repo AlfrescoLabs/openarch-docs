@@ -219,6 +219,17 @@ func Describe(ctx context.Context, opts Options) (*Result, error) {
 	return res, nil
 }
 
+// Pending returns the number of images that describe would describe.
+func Pending(root string, m *casefile.Manifest) int {
+	n := 0
+	for _, t := range targets(m, false) {
+		if !described(m, t) && precheck(root, t) == "" {
+			n++
+		}
+	}
+	return n
+}
+
 func targets(m *casefile.Manifest, allPages bool) []target {
 	var out []target
 	for _, d := range m.Derived {

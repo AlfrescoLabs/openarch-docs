@@ -195,6 +195,42 @@ func (x *Index) Build(ctx context.Context, opts BuildOptions) (*BuildResult, err
 	return res, nil
 }
 
+// Pending returns the number of texts that are new or changed since the last
+// build, and the number of chunks without an embedding.
+func (x *Index) Pending(ctx context.Context, root string) (texts, embeddings int, err error) {
+	m, err := casefile.Load(root)
+	if err != nil {
+		return 0, 0, err
+	}
+	docs, err := collect(root, m)
+	if err != nil {
+		return 0, 0, err
+	}
+	known := map[string]string{}
+	rows, err := x.db.QueryContext(ctx, `SELECT path, sha256 FROM files`)
+	if err != nil {
+		return 0, 0, err
+	}
+	for rows.Next() {
+		var p, sha string
+		if err := rows.Scan(&p, &sha); err != nil {
+			_ = rows.Close()
+			return 0, 0, err
+		}
+		known[p] = sha
+	}
+	if err := rows.Close(); err != nil {
+		return 0, 0, err
+	}
+	for _, d := range docs {
+		if known[d.path] != d.sha {
+			texts++
+		}
+	}
+	err = x.db.QueryRowContext(ctx, `SELECT count(*) - count(embedding) FROM chunks`).Scan(&embeddings)
+	return texts, embeddings, err
+}
+
 func (x *Index) replace(ctx context.Context, d doc, pieces []string) error {
 	tx, err := x.db.BeginTx(ctx, nil)
 	if err != nil {

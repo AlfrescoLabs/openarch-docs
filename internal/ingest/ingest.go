@@ -158,9 +158,14 @@ func ingestFile(opts Options, m *casefile.Manifest, p string) (File, error) {
 			return File{}, err
 		}
 	}
+	// The provenance of 'add' stays when the file is ingested again.
+	var added *casefile.Added
+	if old, ok := m.Original(p); ok {
+		added = old.Added
+	}
 	m.Originals = slices.DeleteFunc(m.Originals, func(o casefile.Original) bool { return o.Path == p })
 	m.Originals = append(m.Originals, casefile.Original{
-		Path: p, SHA256: sum, Size: size, Kind: f.Kind, Role: f.Role, IngestedAt: opts.Now().UTC().Truncate(time.Second), Parser: ParserVersion,
+		Path: p, SHA256: sum, Size: size, Kind: f.Kind, Role: f.Role, IngestedAt: opts.Now().UTC().Truncate(time.Second), Parser: ParserVersion, Added: added,
 	})
 	w := &writer{root: opts.Root, manifest: m, source: p,
 		dir: casefile.DerivedDir(p, sum)}

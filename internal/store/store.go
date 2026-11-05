@@ -172,6 +172,26 @@ func compactJSON(v any) ([]byte, error) {
 	return bytes.TrimRight(b.Bytes(), "\n"), nil
 }
 
+// Pending returns the remote of the last sync, or "" when the case was never
+// synced, and the number of files that a sync would upload.
+func Pending(root string, m *casefile.Manifest) (string, int, error) {
+	st, err := loadState(root)
+	if err != nil {
+		return "", 0, err
+	}
+	remote := st.Remote
+	if remote == "" {
+		remote = DefaultRemote(root)
+	}
+	n := 0
+	for _, it := range items(m, remote, false) {
+		if old, ok := st.Files[it.local]; !ok || old.SHA256 != it.sha {
+			n++
+		}
+	}
+	return st.Remote, n, nil
+}
+
 // folders creates the folders of a path in OpenArch, like mkdir -p.
 type folders struct {
 	client  openarch.Client

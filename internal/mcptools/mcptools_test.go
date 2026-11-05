@@ -77,7 +77,7 @@ func TestTools(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	// No vision model: no look.
-	if strings.Join(names, ",") != "files,note_write,read,search,timeline,verify" {
+	if strings.Join(names, ",") != "collect,files,note_write,read,search,status,timeline,verify" {
 		t.Errorf("tools = %v", names)
 	}
 
@@ -142,7 +142,7 @@ func TestReadOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range res.Tools {
-		if tool.Name == "note_write" {
+		if tool.Name == "note_write" || tool.Name == "collect" {
 			t.Error("note_write in read-only mode")
 		}
 		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {

@@ -169,7 +169,7 @@ Exit codes: 0 ok, 1 error, 2 bad usage, 3 prerequisite missing,
 	pf.BoolVar(&app.Opts.NoColor, "no-color", false, "disable colors (env NO_COLOR)")
 
 	_ = root.RegisterFlagCompletionFunc("profile", cobra.FixedCompletions(models.ProfileNames(), cobra.ShellCompDirectiveNoFileComp))
-	root.AddCommand(newIngestCmd(app), newExtractCmd(app), newIndexCmd(app), newSearchCmd(app), newAskCmd(app), newTimelineCmd(app), newDescribeCmd(app), newLookCmd(app), newSyncCmd(app), newReindexCmd(app), newNoteCmd(app), newMCPCmd(app), newSkillCmd(app), newVerifyCmd(app), newVersionCmd(app))
+	root.AddCommand(newInitCmd(app), newAddCmd(app), newIngestCmd(app), newExtractCmd(app), newIndexCmd(app), newSearchCmd(app), newAskCmd(app), newTimelineCmd(app), newDescribeCmd(app), newLookCmd(app), newSyncCmd(app), newReindexCmd(app), newNoteCmd(app), newCollectCmd(app), newStatusCmd(app), newMCPCmd(app), newSkillCmd(app), newVerifyCmd(app), newVersionCmd(app))
 	return root
 }
 
