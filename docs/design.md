@@ -80,7 +80,7 @@ HEIC and WebP files are reported as unsupported: tesseract cannot read them.
 `index` keeps `extracted/index.sqlite` (pure Go SQLite). It is a cache: deleting it only costs a rebuild.
 
 - Texts: email bodies (`message.txt`), chat messages (one line per message, with time and sender), page texts and OCR from `extract`, text originals, and every `.md` and `.txt` file in `notes/`.
-- Each text is split into chunks of about 1000 characters at paragraph, line or sentence ends, with 150 characters of overlap. Chunks with fewer than 20 letters and digits (OCR noise of photos) are dropped.
+- Each text is split into chunks of about 800 characters at paragraph, line or sentence ends, with 120 characters of overlap. A change of these settings splits every text again. The rare chunk that is still longer than the 512 tokens of mxbai is cut for its embedding only. Chunks with fewer than 20 letters and digits (OCR noise of photos) are dropped.
 - Each chunk keeps its citation (file or attachment name, email subject and date, page, "(OCR)"), its path, the original, the role (`case`, `reference`, `note`), the sender and the date.
 - Full text search: FTS5 with `unicode61 remove_diacritics 2`, so queries without accents find accented words.
 - Embeddings: the embed model of the profile, with the citation before the chunk text. Queries get the mxbai instruction prefix. Vectors are normalized and compared by dot product over all chunks (case folders are small).

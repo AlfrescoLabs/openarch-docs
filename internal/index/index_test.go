@@ -15,11 +15,17 @@ import (
 )
 
 // fakeEmbedder makes bag-of-words vectors: texts that share words are close.
-type fakeEmbedder struct{ calls, inputs int }
+// Inputs longer than maxLen fail as too large, as on Docker Model Runner.
+type fakeEmbedder struct{ calls, inputs, maxLen int }
 
-func (f *fakeEmbedder) Embed(_ context.Context, _ string, inputs []string) ([][]float32, error) {
+func (f *fakeEmbedder) Embed(_ context.Context, model string, inputs []string) ([][]float32, error) {
 	f.calls++
 	f.inputs += len(inputs)
+	for _, in := range inputs {
+		if f.maxLen > 0 && len([]rune(in)) > f.maxLen {
+			return nil, &models.ModelError{Model: model, Status: 500, Body: `{"error":{"message":"input (548 tokens) is too large to process"}}`}
+		}
+	}
 	out := make([][]float32, len(inputs))
 	for i, in := range inputs {
 		v := make([]float32, 64)
@@ -172,6 +178,21 @@ func TestBuildNoEmbed(t *testing.T) {
 	res, err = x.Build(context.Background(), BuildOptions{Root: root, Embedder: &fakeEmbedder{}, Model: "m1"})
 	if err != nil || res.Embedded != 5 || res.Pending != 0 {
 		t.Fatalf("second build = %+v, %v", res, err)
+	}
+}
+
+func TestBuildTooLong(t *testing.T) {
+	root := newCase(t)
+	x := open(t, root)
+	// Most inputs of the case are longer than 120 characters with their citation.
+	res, err := x.Build(context.Background(), BuildOptions{Root: root, Embedder: &fakeEmbedder{maxLen: 120}, Model: "m1"})
+	if err != nil || res.Embedded != 5 || res.Pending != 0 {
+		t.Fatalf("build = %+v, %v", res, err)
+	}
+	// Full text search still sees the whole chunk.
+	hits, err := x.Search(context.Background(), SearchOptions{Query: "instalacion", Limit: 1})
+	if err != nil || len(hits) != 1 || !strings.Contains(hits[0].Text, "fecha de instalacion") {
+		t.Errorf("hits = %+v, %v", hits, err)
 	}
 }
 

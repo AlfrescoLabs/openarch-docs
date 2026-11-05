@@ -34,7 +34,7 @@ func newIndexCmd(app *App) *cobra.Command {
 		Long: `Update the search index in extracted/index.sqlite from the texts that ingest
 and extract wrote, the text originals, and the notes in notes/.
 
-Each text is split into chunks of about 1000 characters. Each chunk gets full
+Each text is split into chunks of about 800 characters. Each chunk gets full
 text search (accents folded, so "sotano" finds "sótano") and an embedding from
 the embedding model of the profile, on Docker Model Runner. Only new and
 changed texts are processed. With --no-embed only full text search is updated.

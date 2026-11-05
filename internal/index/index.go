@@ -20,6 +20,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/AlfrescoLabs/openarch-docs/internal/casefile"
+	"github.com/AlfrescoLabs/openarch-docs/internal/models"
 )
 
 // File is the index path, relative to the case folder.
@@ -106,6 +107,22 @@ func (x *Index) Build(ctx context.Context, opts BuildOptions) (*BuildResult, err
 		return nil, err
 	}
 	res := &BuildResult{Files: len(docs), Model: opts.Model, IndexFile: File}
+	// Other chunk settings make other chunks: split every text again.
+	chunking := fmt.Sprintf("%d/%d/%d", chunkSize, chunkOverlap, minLetters)
+	old, err := x.meta(ctx, "chunking")
+	if err != nil {
+		return nil, err
+	}
+	if old != chunking {
+		for _, table := range []string{"files", "chunks", "chunks_fts"} {
+			if _, err := x.db.ExecContext(ctx, `DELETE FROM `+table); err != nil {
+				return nil, err
+			}
+		}
+		if err := x.setMeta(ctx, "chunking", chunking); err != nil {
+			return nil, err
+		}
+	}
 	if opts.Embedder != nil {
 		// Embeddings of another model cannot be compared with new ones.
 		old, err := x.meta(ctx, "embed_model")
@@ -254,6 +271,9 @@ func (x *Index) embedMissing(ctx context.Context, opts BuildOptions) (int, error
 			return done, nil
 		}
 		vecs, err := opts.Embedder.Embed(ctx, opts.Model, inputs)
+		if tooLong(err) {
+			vecs, err = embedEach(ctx, opts, inputs)
+		}
 		if err != nil {
 			return done, err
 		}
@@ -275,6 +295,34 @@ func (x *Index) embedMissing(ctx context.Context, opts BuildOptions) (int, error
 			_, _ = fmt.Fprintf(opts.Progress, "Embedded %d chunks\n", done)
 		}
 	}
+}
+
+// tooLong reports whether the model refused an input for its length.
+func tooLong(err error) bool {
+	var me *models.ModelError
+	return errors.As(err, &me) && strings.Contains(me.Body, "too large")
+}
+
+// embedEach embeds inputs one at a time. An input that is too long for the
+// model is cut in half until it fits; the full text stays in the index for
+// full text search.
+func embedEach(ctx context.Context, opts BuildOptions, inputs []string) ([][]float32, error) {
+	out := make([][]float32, len(inputs))
+	for i, in := range inputs {
+		for {
+			v, err := opts.Embedder.Embed(ctx, opts.Model, []string{in})
+			if err == nil {
+				out[i] = v[0]
+				break
+			}
+			r := []rune(in)
+			if !tooLong(err) || len(r) < 100 {
+				return nil, err
+			}
+			in = string(r[:len(r)/2])
+		}
+	}
+	return out, nil
 }
 
 // SearchOptions configure a search.

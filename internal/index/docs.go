@@ -20,11 +20,12 @@ import (
 // RoleNote marks notes and drafts: interpretations, not sources.
 const RoleNote = "note"
 
-// Chunk sizes, in characters. mxbai-embed-large reads 512 tokens; 1000
-// characters of Spanish or French text are about 300.
+// Chunk sizes, in characters. mxbai-embed-large reads 512 tokens. 800
+// characters of prose are about 250 tokens; numbers, addresses and OCR noise
+// take more, and embedOne cuts the rare piece that is still too long.
 const (
-	chunkSize    = 1000
-	chunkOverlap = 150
+	chunkSize    = 800
+	chunkOverlap = 120
 	// minLetters drops pieces with almost no text, such as OCR of a photo.
 	minLetters = 20
 )
