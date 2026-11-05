@@ -50,7 +50,7 @@ func Parse(r io.Reader) ([]Question, error) {
 		}
 		key, value, ok := strings.Cut(line, ":")
 		if !ok || len(key) != 1 {
-			return nil, fmt.Errorf("line %d: want Q:, E:, N: or S:", n)
+			return nil, fmt.Errorf("line %d: want a line that starts with Q, E, N or S and a colon", n)
 		}
 		value = strings.TrimSpace(value)
 		if key == "Q" {
@@ -58,7 +58,7 @@ func Parse(r io.Reader) ([]Question, error) {
 			continue
 		}
 		if len(qs) == 0 {
-			return nil, fmt.Errorf("line %d: %s: before the first Q:", n, key)
+			return nil, fmt.Errorf("line %d: %s line before the first question", n, key)
 		}
 		q := &qs[len(qs)-1]
 		switch key {
@@ -83,7 +83,7 @@ func Parse(r io.Reader) ([]Question, error) {
 		case "S":
 			q.Skip = value
 		default:
-			return nil, fmt.Errorf("line %d: unknown key %s:", n, key)
+			return nil, fmt.Errorf("line %d: unknown key %q", n, key)
 		}
 	}
 	return qs, sc.Err()
