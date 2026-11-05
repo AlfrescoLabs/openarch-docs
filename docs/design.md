@@ -134,3 +134,17 @@ Each uploaded document has `sys_description` = `openarch-docs/1 ` + one line of 
 `reindex` lists the remote folder tree, reads the descriptions, downloads each file whose local copy is missing or differs (through a temporary file), and merges the entries into the local manifest. A local original that differs is never overwritten; it is reported as a conflict. Documents without the description prefix, and entries whose path would leave the case folder, are skipped. Then it updates the search index.
 
 The plugin talks to OpenArch only by running `openarch ... --output json --non-interactive` (`$OPENARCH_BIN`, else `openarch` on `PATH`), so it never sees a password. Exit codes of openarch pass through (6 for a failed login). It needs an openarch with `documents upload --replace` and `--description`.
+
+## MCP server, notes and skill
+
+`mcp` runs an MCP server on stdio (go-sdk) with typed tools: `search`, `read`, `files`, `timeline`, `verify`, `look` (left out with `--no-vision`) and `note_write` (left out with `--read-only`). All tools are marked read-only except `note_write`.
+
+- `read` returns text files only (`.txt`, `.md`, `.json`, `.html`, `.eml`), in parts of up to 12000 characters with `next_offset`, and the manifest entry of the file as `provenance`. The manifest and `sync.json` are refused; `files` lists the manifest instead.
+- `files` lists originals and derived files with their kind, source, page, image count, attachment name, email subject, sender and date; it filters by kind and path prefix, in pages.
+- Paths that would leave the case folder are refused. Results are cut at 16000 bytes, so one result cannot fill the context of a small model; search hits are cut at 1200 characters.
+
+`note write` and `note_write` write only in `notes/`: names of letters, digits, `.`, `-` and `_`, with at most one folder (`drafts/reply.md`); `.md` is added when there is no `.md` or `.txt`. An existing note needs `--overwrite`. Notes are indexed with the role `note`.
+
+The Agent Skill `skills/openarch-docs/SKILL.md` is embedded in the binary; `skill install` writes it to `<dir>/.claude/skills/openarch-docs/SKILL.md` (default: the case folder; hidden folders are never originals) and replaces a changed file only with `--force`.
+
+`examples/agent` runs Docker Agent with the MCP server as its only toolset and `skills: true`, on a synthetic sample case, and checks the folder after the run.

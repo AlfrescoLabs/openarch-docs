@@ -1,0 +1,29 @@
+# Docker Agent that works with a case folder through 'openarch docs mcp', with
+# local models on Docker Model Runner. The agent has no shell and no network:
+# its only tools are the openarch-docs tools, which read the case folder and
+# write notes in notes/. run.sh installs the openarch-docs skill in the case
+# folder, so 'skills: true' loads it.
+models:
+  local:
+    provider: dmr
+    model: glm-4.7-flash:31B
+
+agents:
+  root:
+    model: local
+    description: Works with the documents of a case folder
+    instruction: |
+      You help a person with the documents of a case folder. Use only the case tools.
+      Every fact must come from a tool call. Call one tool, wait for its real result, then decide the next step.
+      Never write a tool result yourself.
+      After each fact, put its source in parentheses: the file path from the tool result, such as (extracted/x-1a2b3c4d/message.txt).
+      Say how a file arrived (email or chat, from whom, when) only as the files tool or the read provenance shows it.
+      Keep facts apart from interpretations.
+      You cannot see images: use the look tool for photos and plans.
+      Write notes and drafts only with note_write. When the task asks for a note, call note_write yourself; never ask for confirmation.
+      Answer and write in the language of the task.
+    skills: true
+    toolsets:
+      - type: mcp
+        command: openarch
+        args: [docs, mcp]

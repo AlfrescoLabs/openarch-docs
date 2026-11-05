@@ -4,7 +4,7 @@ A plugin for the [openarch CLI](https://github.com/AlfrescoLabs/openarch-cli) to
 
 It stores the files in OpenArch, extracts their text, and answers questions about them with local models on Docker Model Runner. Nothing goes to the cloud.
 
-Status: early development. `ingest`, `extract`, `describe`, `index`, `search`, `ask`, `timeline`, `look`, `sync`, `reindex`, `verify` and `version` work today.
+Status: early development. `ingest`, `extract`, `describe`, `index`, `search`, `ask`, `timeline`, `look`, `sync`, `reindex`, `note`, `mcp`, `skill`, `verify` and `version` work today.
 
 ## Requirements
 
@@ -40,3 +40,7 @@ go test ./...
 ## License
 
 Apache License 2.0.
+
+## Agents
+
+`openarch docs mcp` is an MCP server with tools to search and read the case folder, look at its images, and write notes in `notes/`. `openarch docs skill install` adds an Agent Skill to the case folder. [examples/agent](examples/agent) runs a Docker Agent with both on a synthetic sample case.

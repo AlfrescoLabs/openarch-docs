@@ -1,0 +1,32 @@
+exec openarch-docs ingest --case case
+
+# note write from stdin and from a file
+stdin note.md
+exec openarch-docs note write --case case drafts/respuesta
+stdout 'Wrote notes/drafts/respuesta.md'
+cmp case/notes/drafts/respuesta.md note.md
+! exec openarch-docs note write --case case drafts/respuesta --file note.md
+stderr 'the note exists'
+exec openarch-docs note write --case case drafts/respuesta --file note.md --overwrite
+! exec openarch-docs note write --case case ../fuera --file note.md
+stderr 'bad note name'
+
+# skill install and show
+exec openarch-docs skill install --case case
+stdout 'Installed the skill'
+exists case/.claude/skills/openarch-docs/SKILL.md
+exec openarch-docs skill install --case case
+stdout 'up to date'
+exec openarch-docs skill show
+stdout '^name: openarch-docs$'
+
+# The skill and notes are not originals.
+exec openarch-docs verify --case case
+stdout '0 new files'
+
+-- case/aviso.txt --
+Texto del aviso.
+-- note.md --
+# Borrador
+
+Gracias por la respuesta.

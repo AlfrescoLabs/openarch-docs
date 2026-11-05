@@ -1,0 +1,5 @@
+[10/9/26, 18:05:12] Instalador Ejemplo: Hola, estoy en el garaje con el técnico.
+[10/9/26, 18:10:04] Instalador Ejemplo: <adjunto: 00000012-PHOTO-2026-09-10-18-10-04.jpg>
+[10/9/26, 18:10:30] Instalador Ejemplo: Este es el cuarto de contadores donde irá el contador nuevo.
+[10/9/26, 18:12:00] Cliente Ejemplo: Perfecto, gracias. ¿Es el cuarto del portal 3?
+[10/9/26, 18:15:41] Instalador Ejemplo: Sí, el del portal 3, sótano -2.
