@@ -1,0 +1,8 @@
+From: avisos@example.com
+To: luis@example.org
+Subject: Aviso
+Date: Mon, 3 Nov 2026 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<html><body><div>Primera l&iacute;nea</div><script>x()</script><table><tr><td>A</td><td>B</td></tr></table><p>De: Otro Remitente &lt;otro@example.com&gt;<br>Asunto: Re: Aviso<br>Fecha: 1 nov 2026</p></body></html>

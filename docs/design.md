@@ -35,3 +35,24 @@ The case folder is `--case`, then `OPENARCH_DOCS_CASE`, then the current folder.
 | `large` | `glm-4.7-flash:31B` | `ai/gemma3:4B-Q4_K_M` | `ai/mxbai-embed-large` | 32 GB |
 
 gemma3 reads Spanish scans well but cannot do tool calls on Docker Model Runner, so it is used only for vision. The plugin keeps one large model in memory at a time.
+
+## Case folder
+
+| Path | Content |
+| --- | --- |
+| any file outside the folders below | Original case documents. Never changed. |
+| `references/` | Reference texts the user adds, such as laws. Originals with role `reference`. |
+| `notes/` | Notes and drafts. Interpretations, not sources. |
+| `extracted/manifest.json` | Every original (path, SHA-256, size, kind, role) and every derived file (path, SHA-256, source, provenance). |
+| `extracted/<name>-<hash8>/` | Derived files of one original. `<hash8>` is the start of its SHA-256, so a changed original gets a new folder. |
+
+Hidden files and agent files (`AGENTS.md`, `CLAUDE.md`) are not originals. Files in `extracted/` that are not in the manifest are left alone.
+
+Derived files of an email: `message.txt` (headers and body text), `message.html`, `attachments/`, `inline/`, and `message-N/` for each attached email with its own `message.eml`. Provenance in the manifest:
+
+- `message`: the headers of the email that holds the file.
+- `chain`: the emails around it, outermost first, for attached emails.
+- `forwarded`: the forwarded or quoted messages found in the body text (marker lines, or `From:`/`De:` blocks, in English and Spanish).
+- `part` and `attachment`: the MIME part number and the file name the sender gave.
+
+Derived files of a WhatsApp export: `chat.txt`, `messages.json` and `media/`. Each media file records who sent it and when. The date order (day or month first) comes from the export; when no date shows it, `messages.json` keeps the time as written and has no ISO time.

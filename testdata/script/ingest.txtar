@@ -1,0 +1,71 @@
+# A synthetic case folder: an email with a forward and an attachment, and a WhatsApp export.
+mkzip case/chat.zip src/_chat.txt src/00000001-PHOTO-2026-09-10-18-10-04.jpg
+cd case
+
+# Dry run writes nothing.
+exec openarch-docs ingest --dry-run
+stdout '^Would ingest 2 new and 0 changed files'
+! exists extracted/manifest.json
+
+exec openarch-docs ingest
+stdout '^added +aviso.eml \(email, 2 derived\)$'
+stdout '^added +chat.zip \(zip, 3 derived\)$'
+exists extracted/manifest.json
+grep '"sender": "Instalador"' extracted/manifest.json
+grep '"attachment": "plano.pdf"' extracted/manifest.json
+grep '"from": "Instalador <instalador@example.net>"' extracted/manifest.json
+
+# Nothing new the second time.
+exec openarch-docs ingest -o json
+stdout '"added": 0'
+stdout '"derived": 0'
+
+# Verify passes, and lists a new file without failing.
+cp ../src/nota.txt nota.txt
+exec openarch-docs verify
+stdout '^new +nota.txt$'
+stdout '^OK: 2 originals and 5 derived files checked. 1 new files not ingested.$'
+
+# A changed original fails verify with exit code 1, in JSON too.
+cp ../src/nota.txt aviso.eml
+! exec openarch-docs verify -o json
+stdout '"kind": "changed"'
+stdout '"path": "aviso.eml"'
+
+# --case works from another folder, and a missing folder is a usage error.
+cd ..
+! exec openarch-docs verify --case case --output json
+stdout '"problems"'
+! exec openarch-docs ingest --case nosuch
+stderr 'is not a folder'
+
+-- case/aviso.eml --
+From: Ana <ana@example.com>
+To: Luis <luis@example.org>
+Subject: Fwd: Plano
+Date: Thu, 30 Oct 2026 07:51:00 +0100
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b"
+
+--b
+Content-Type: text/plain; charset=utf-8
+
+---------- Forwarded message ---------
+From: Instalador <instalador@example.net>
+Date: 29 oct 2026
+Subject: Plano
+
+Va el plano.
+--b
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="plano.pdf"
+
+%PDF-1.4 plano
+--b--
+-- src/_chat.txt --
+[10/9/26, 18:10:04] Instalador: <attached: 00000001-PHOTO-2026-09-10-18-10-04.jpg>
+[13/9/26, 9:00:00] Cliente: gracias
+-- src/00000001-PHOTO-2026-09-10-18-10-04.jpg --
+jpeg
+-- src/nota.txt --
+nota

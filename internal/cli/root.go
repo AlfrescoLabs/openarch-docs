@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -95,6 +96,23 @@ func Execute(ctx context.Context, args []string, s Streams) int {
 	return int(output.CodeOf(err))
 }
 
+// caseRoot returns the absolute path of the case folder.
+func (a *App) caseRoot() (string, error) {
+	dir := a.Opts.Case
+	if dir == "" {
+		dir = "."
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(abs)
+	if err != nil || !info.IsDir() {
+		return "", output.Usage(fmt.Sprintf("case folder %s is not a folder", abs), "Use --case <folder> or run the command in the case folder.")
+	}
+	return abs, nil
+}
+
 func newRootCmd(app *App) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "openarch-docs",
@@ -134,7 +152,7 @@ Exit codes: 0 ok, 1 error, 2 bad usage, 3 prerequisite missing,
 	pf.BoolVarP(&app.Opts.Verbose, "verbose", "v", envBool(envVerbose), "print debug logs to stderr (env "+envVerbose+")")
 	pf.BoolVar(&app.Opts.NoColor, "no-color", false, "disable colors (env NO_COLOR)")
 
-	root.AddCommand(newVersionCmd(app))
+	root.AddCommand(newIngestCmd(app), newVerifyCmd(app), newVersionCmd(app))
 	return root
 }
 

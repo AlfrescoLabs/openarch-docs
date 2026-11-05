@@ -1,0 +1,65 @@
+From: Ana Lopez <ana@example.com>
+To: Luis Martin <luis@example.org>
+Subject: =?UTF-8?Q?Fwd:_Condiciones_de_suministro_n=C2=BA_9999?=
+Date: Thu, 30 Oct 2026 07:51:00 +0100
+Message-ID: <outer-1@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="outer"
+
+--outer
+Content-Type: multipart/related; boundary="rel"
+
+--rel
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Te reenv=C3=ADo las condiciones.
+
+---------- Forwarded message ---------
+From: Instalador Ejemplo <instalador@example.net>
+Date: mi=C3=A9, 29 oct 2026 a las 18:00
+Subject: Condiciones de suministro
+To: Ana Lopez <ana@example.com>
+
+Adjunto el plano y las fotos.
+--alt
+Content-Type: text/html; charset="utf-8"
+
+<html><head><style>p{}</style></head><body><p>Te reenv&iacute;o las condiciones.</p><img src="cid:logo"></body></html>
+--alt--
+
+--rel
+Content-Type: image/png
+Content-ID: <logo>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgpmYWtl
+--rel--
+
+--outer
+Content-Type: message/rfc822
+
+From: =?ISO-8859-1?Q?Distribuidora_Ejemplo?= <avisos@example.com>
+To: Instalador Ejemplo <instalador@example.net>
+Subject: =?ISO-8859-1?Q?Contestaci=F3n_expediente_9999?=
+Date: Wed, 29 Oct 2026 12:00:00 +0100
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="inner"
+
+--inner
+Content-Type: text/plain; charset="iso-8859-1"
+Content-Transfer-Encoding: quoted-printable
+
+La centralizaci=F3n concedida est=E1 en Calle Falsa 12, s=F3tano -2.
+--inner
+Content-Type: application/pdf; name="=?UTF-8?Q?Condiciones_t=C3=A9cnicas.pdf?="
+Content-Disposition: attachment; filename*=UTF-8''Condiciones%20t%C3%A9cnicas.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQgZmFrZQ==
+--inner--
+
+--outer--

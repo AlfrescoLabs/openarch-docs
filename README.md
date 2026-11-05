@@ -4,7 +4,7 @@ A plugin for the [openarch CLI](https://github.com/AlfrescoLabs/openarch-cli) to
 
 It stores the files in OpenArch, extracts their text, and answers questions about them with local models on Docker Model Runner. Nothing goes to the cloud.
 
-Status: early development. Only `version` works today.
+Status: early development. `ingest`, `verify` and `version` work today.
 
 ## Requirements
 
@@ -16,9 +16,12 @@ Status: early development. Only `version` works today.
 Put `openarch-docs` on your `PATH`. Then:
 
 ```
-openarch docs version
-openarch plugin list
+cd my-case-folder
+openarch docs ingest
+openarch docs verify
 ```
+
+`ingest` records each original with its SHA-256 and unpacks emails (body, attachments, inline images, attached emails) and WhatsApp exports into `extracted/`. `verify` checks that nothing changed.
 
 ## Build
 
