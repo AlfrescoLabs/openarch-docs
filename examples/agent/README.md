@@ -11,6 +11,14 @@ The agent has no shell and no network. Its only tools come from `openarch docs m
 ./run.sh ~/cases/my-case "¿Qué falta para cerrar el caso? Escribe una nota en notes/pendiente.md."
 ```
 
+For a conversation, use `chat.sh` on a prepared case folder. Each message continues the last one; the conversation is kept in `<case>/.agent/session.db`. With no message it opens the Docker Agent terminal UI on the same conversation, and `--new` starts a new one. At the start of a conversation the agent reads `status` and the newest notes, so the work of earlier conversations carries over.
+
+```
+./chat.sh ~/cases/my-case "¿Quién envió la foto del cuarto de contadores?"
+./chat.sh ~/cases/my-case "¿Y qué portal dijo esa persona?"
+./chat.sh ~/cases/my-case
+```
+
 `run.sh` prepares the case (`ingest`, `extract`, `describe`, `index`), installs the skill, runs the agent with the task, and then checks the folder itself: `verify` must pass and the agent must have written a note.
 
 Requirements: Docker with Docker Model Runner, Docker Agent, `openarch` and `openarch-docs` on `PATH`, and the models of the profile:

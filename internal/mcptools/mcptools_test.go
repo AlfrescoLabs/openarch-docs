@@ -130,6 +130,11 @@ func TestTools(t *testing.T) {
 		}
 	}
 
+	text, isErr = call(t, cs, "files", map[string]any{"kind": "note"})
+	if isErr || !strings.Contains(text, `"path": "notes/drafts/respuesta.md"`) || !strings.Contains(text, `"total": 1`) {
+		t.Errorf("notes = %s", text)
+	}
+
 	if text, isErr := call(t, cs, "verify", map[string]any{}); isErr || !strings.Contains(text, `"problems": []`) {
 		t.Errorf("verify = %s", text)
 	}

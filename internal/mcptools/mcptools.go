@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -53,7 +54,7 @@ func New(opts Options) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{Name: "read", Annotations: ro, Description: "Read a text file of the case folder by its path, as given by search or files: email bodies (message.txt), page texts, OCR, image descriptions, chat messages, notes, references. " +
 		"The result has the provenance of the file: the email or chat message that sent it, the page, the method. Long files come in parts: call again with the offset in next_offset."}, t.read)
 	mcp.AddTool(s, &mcp.Tool{Name: "files", Annotations: ro, Description: "List the files of the case folder with their provenance: originals, email bodies, attachments, inline images, chat photos, page images and texts. " +
-		"Filter by kind (for example attachment, media, page-image, description) or by a path prefix. Use it to find photos, plans and attachments, and who sent them."}, t.files)
+		"Filter by kind (for example attachment, media, page-image, description, note) or by a path prefix. Use it to find photos, plans and attachments, and who sent them, and the notes of earlier work (kind note, with their date)."}, t.files)
 	mcp.AddTool(s, &mcp.Tool{Name: "timeline", Annotations: ro, Description: "List the emails, the forwarded messages quoted in emails and the chat messages, oldest first, with sender, subject and file path. Dates are YYYY-MM-DD."}, t.timeline)
 	mcp.AddTool(s, &mcp.Tool{Name: "status", Annotations: ro, Description: "Show what is left to do in the case folder: files to ingest, extract, describe, index or sync. Use it to know if the case is ready, and tell the person the command to run."}, t.status)
 	mcp.AddTool(s, &mcp.Tool{Name: "verify", Annotations: ro, Description: "Check that the originals and derived files of the case folder still match their SHA-256 checksums."}, t.verify)
@@ -205,7 +206,7 @@ func (t *tools) clean(p string) (string, error) {
 
 // FilesInput is the input of files.
 type FilesInput struct {
-	Kind   string `json:"kind,omitempty" jsonschema:"keep one kind: original, body, attachment, inline, message, media, page-image, page-text, page-ocr, image-ocr, description"`
+	Kind   string `json:"kind,omitempty" jsonschema:"keep one kind: original, note, body, attachment, inline, message, media, page-image, page-text, page-ocr, image-ocr, description"`
 	Prefix string `json:"prefix,omitempty" jsonschema:"keep paths that start with this, such as extracted/my-email-1a2b3c4d/"`
 	Limit  int    `json:"limit,omitempty" jsonschema:"number of files, up to 200; default 50"`
 	Offset int    `json:"offset,omitempty" jsonschema:"files to skip, for the next page"`
@@ -245,6 +246,23 @@ func (t *tools) files(_ context.Context, _ *mcp.CallToolRequest, in FilesInput) 
 		}
 		all = append(all, f)
 	}
+	// Notes are not in the manifest: they are listed from notes/.
+	notesDir := filepath.Join(t.opts.Root, casefile.NotesDir)
+	_ = filepath.WalkDir(notesDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !slices.Contains([]string{".md", ".txt"}, strings.ToLower(filepath.Ext(p))) {
+			return nil
+		}
+		rel, err := filepath.Rel(t.opts.Root, p)
+		if err != nil {
+			return nil
+		}
+		f := fileInfo{Path: filepath.ToSlash(rel), Kind: "note", Role: "note"}
+		if info, err := d.Info(); err == nil {
+			f.Date = info.ModTime().UTC().Format("2006-01-02T15:04")
+		}
+		all = append(all, f)
+		return nil
+	})
 	all = slices.DeleteFunc(all, func(f fileInfo) bool {
 		return (in.Kind != "" && f.Kind != in.Kind) || (in.Prefix != "" && !strings.HasPrefix(f.Path, in.Prefix))
 	})

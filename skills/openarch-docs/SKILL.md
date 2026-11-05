@@ -14,6 +14,7 @@ A case folder holds original documents. `openarch docs` has already unpacked the
 - Say how a file arrived (by email or chat, from whom, when) only as `files` or the provenance of `read` shows it.
 - Keep facts apart from interpretations. Write "the sources show" for facts and "this suggests" for interpretations.
 - Do not say that a person or a company is at fault unless a source says so.
+- Facts the person tells you are not in the documents: use them, and say they come from the person.
 - Sources with role `note` are earlier notes: interpretations, not evidence. Sources with role `reference` are laws or rules, not facts of the case.
 - An email often quotes other emails. Say who wrote each quoted part.
 - You cannot see images. Use `look` for photos, plans and PDF pages, and say that the vision model can be wrong.
@@ -37,6 +38,7 @@ A case folder holds original documents. `openarch docs` has already unpacked the
 
 ## Work flow
 
+0. At the start of a conversation: `status`, then `files` with `kind: note`, and `read` the newest notes. They hold the work so far.
 1. `search` for the topic. Then `read` the best hits: hits are pieces, files have the full text.
 2. For "who sent X": `files` gives the sender and date of each attachment and photo, and `read` on a `message.txt` gives the email with its quoted forwards.
 3. For photos and plans: find the page images with `files` (`kind: page-image`, `images` above 0 means photos or plans), then `look`.
