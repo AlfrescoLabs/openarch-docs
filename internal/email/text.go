@@ -95,14 +95,56 @@ func alternatives(words []string) string {
 	return strings.Join(q, "|")
 }
 
-// Forwarded finds the forwarded or quoted messages in a body text: a marker
-// line followed by header lines, or a "From:" line (in any supported
-// language) followed by a date or subject line.
-func Forwarded(text string) []casefile.MessageInfo {
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	var found []casefile.MessageInfo
+// Segment is a forwarded or quoted message in a body text.
+type Segment struct {
+	// Start is the byte offset in the text, with "\r\n" turned into "\n",
+	// where the message starts: its marker or separator line, or its first
+	// header line.
+	Start int
+	Info  casefile.MessageInfo
+}
+
+// separator matches a line of dashes or underscores, as Gmail writes above
+// each message of a forwarded conversation.
+var separator = regexp.MustCompile(`^[-_]{5,}$`)
+
+// replyTime matches the time that ends the date of a reply line: "9:10 AM", "18:00".
+var replyTime = regexp.MustCompile(`\d{1,2}[:h]\d{2}(?::\d{2})?(?:\s?[AaPp]\.?\s?[Mm]\.?)?`)
+
+// splitReply splits the middle of a reply line into the date and the sender.
+// The date ends with its time; without a time, at the last comma.
+func splitReply(s string) (date, from string) {
+	if loc := replyTime.FindAllStringIndex(s, -1); loc != nil {
+		end := loc[len(loc)-1][1]
+		return strings.TrimSpace(s[:end]), strings.TrimSpace(strings.TrimLeft(s[end:], ", "))
+	}
+	if i := strings.LastIndex(s, ","); i > 0 {
+		return strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+1:])
+	}
+	return "", strings.TrimSpace(s)
+}
+
+// Segments finds the forwarded and quoted messages in a body text, in order:
+// a marker line followed by header lines, a "From:" line (in any supported
+// language) followed by a date or subject line, or a reply line such as
+// "On <date>, <sender> wrote:".
+func Segments(text string) []Segment {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	lines := strings.Split(text, "\n")
+	offsets := make([]int, len(lines))
+	for i, off := 0, 0; i < len(lines); i++ {
+		offsets[i] = off
+		off += len(lines[i]) + 1
+	}
+	var found []Segment
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(strings.TrimLeft(lines[i], "> "))
+		if m := lang.ReplyRE.FindStringSubmatch(line); m != nil {
+			var info casefile.MessageInfo
+			info.Date, info.From = splitReply(m[1])
+			found = append(found, Segment{Start: offsets[i], Info: info})
+			continue
+		}
 		start := i
 		if forwardMarker.MatchString(line) {
 			start = i + 1
@@ -113,10 +155,24 @@ func Forwarded(text string) []casefile.MessageInfo {
 		if info.From == "" || (info.Subject == "" && info.Date == "") {
 			continue
 		}
-		found = append(found, info)
+		first := i
+		if first == start && first > 0 && separator.MatchString(strings.TrimSpace(lines[first-1])) {
+			first--
+		}
+		found = append(found, Segment{Start: offsets[first], Info: info})
 		i = start + n - 1
 	}
 	return found
+}
+
+// Forwarded returns the headers of the forwarded and quoted messages in a
+// body text, in order. See Segments.
+func Forwarded(text string) []casefile.MessageInfo {
+	var out []casefile.MessageInfo
+	for _, s := range Segments(text) {
+		out = append(out, s.Info)
+	}
+	return out
 }
 
 // readHeaders reads header lines until the first line that is not a header.

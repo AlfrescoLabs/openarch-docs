@@ -13,6 +13,7 @@ import (
 
 	"github.com/AlfrescoLabs/openarch-docs/internal/casefile"
 	"github.com/AlfrescoLabs/openarch-docs/internal/chat"
+	"github.com/AlfrescoLabs/openarch-docs/internal/email"
 	"github.com/AlfrescoLabs/openarch-docs/internal/extract"
 	"github.com/AlfrescoLabs/openarch-docs/internal/ingest"
 	"github.com/AlfrescoLabs/openarch-docs/internal/vision"
@@ -22,7 +23,7 @@ import (
 const RoleNote = "note"
 
 // citeVersion grows when citations change, so the index is built again.
-const citeVersion = 3
+const citeVersion = 4
 
 // Chunk sizes, in characters. mxbai-embed-large reads 512 tokens. 800
 // characters of prose are about 250 tokens; numbers, addresses and OCR noise
@@ -186,6 +187,49 @@ func readText(root string, d doc) (string, error) {
 		fmt.Fprintf(&b, "[%s] %s: %s\n", t, m.Sender, m.Text)
 	}
 	return b.String(), nil
+}
+
+// piece is a chunk with the citation, sender and date of the message it is from.
+type piece struct {
+	text, cite, sender, date string
+}
+
+// pieces splits a text into chunks. An email body is first split at each
+// forwarded or quoted message, so every chunk has the sender and date of its
+// own message, not only those of the email that quotes it.
+func pieces(d doc, text string) []piece {
+	whole := func(t, cite, sender, date string) []piece {
+		var out []piece
+		for _, c := range chunks(t) {
+			out = append(out, piece{text: c, cite: cite, sender: sender, date: date})
+		}
+		return out
+	}
+	if d.kind != ingest.KindBody {
+		return whole(text, d.cite, d.sender, d.date)
+	}
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	segs := email.Segments(text)
+	// message.txt starts with the headers of the email itself.
+	if len(segs) > 0 && segs[0].Start == 0 {
+		segs = segs[1:]
+	}
+	if len(segs) == 0 {
+		return whole(text, d.cite, d.sender, d.date)
+	}
+	out := whole(text[:segs[0].Start], d.cite, d.sender, d.date)
+	for i, sg := range segs {
+		end := len(text)
+		if i+1 < len(segs) {
+			end = segs[i+1].Start
+		}
+		cite := d.cite + ", quoted message from " + sg.Info.From
+		if sg.Info.Date != "" {
+			cite += " of " + sg.Info.Date
+		}
+		out = append(out, whole(text[sg.Start:end], cite, sg.Info.From, sg.Info.Date)...)
+	}
+	return out
 }
 
 // chunks splits text into pieces of about chunkSize characters, at

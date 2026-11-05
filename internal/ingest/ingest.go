@@ -68,7 +68,8 @@ const (
 //
 //	1: first release
 //	2: Windows-1252 text labeled ISO-8859-1, HTML entities in plain text
-const ParserVersion = 2
+//	3: reply lines ("On <date>, <sender> wrote:") in forwarded
+const ParserVersion = 3
 
 // ingestKinds are the kinds of derived files that ingest writes.
 var ingestKinds = []string{KindBody, KindHTML, KindAttachment, KindInline, KindMessage, KindChat, KindChatJSON, KindMedia, KindZipEntry}

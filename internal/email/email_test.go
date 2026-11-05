@@ -135,3 +135,29 @@ func TestWindows1252AndEntities(t *testing.T) {
 		t.Errorf("forwarded = %+v", f)
 	}
 }
+
+func TestSegments(t *testing.T) {
+	text := "Respuesta nueva.\n\n" +
+		"On Wed, Oct 21, 2026 at 9:10 AM Ana Lopez <ana@example.com> wrote:\n> Hola.\n\n" +
+		"----------\nFrom: Luis <luis@example.org>\nDate: Tue, Oct 20, 2026 at 5:51 PM\nTo: Ana\n\nTexto de Luis.\n\n" +
+		"El mié, 29 oct 2026 a las 18:00, Marta (<marta@example.es>) escribió:\n> Texto.\n" +
+		"Le 28 oct. 2026 à 10:00, Marie a écrit :\n" +
+		"Em 27 de out. de 2026, às 9:00, João <joao@example.pt> escreveu:\n"
+	got := Segments(text)
+	want := []struct{ from, date, startsWith string }{
+		{"Ana Lopez <ana@example.com>", "Wed, Oct 21, 2026 at 9:10 AM", "On Wed"},
+		{"Luis <luis@example.org>", "Tue, Oct 20, 2026 at 5:51 PM", "----------\nFrom: Luis"},
+		{"Marta (<marta@example.es>)", "mié, 29 oct 2026 a las 18:00", "El mié"},
+		{"Marie", "28 oct. 2026 à 10:00", "Le 28"},
+		{"João <joao@example.pt>", "27 de out. de 2026, às 9:00", "Em 27"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("segments = %+v", got)
+	}
+	for i, w := range want {
+		g := got[i]
+		if g.Info.From != w.from || g.Info.Date != w.date || !strings.HasPrefix(text[g.Start:], w.startsWith) {
+			t.Errorf("segment %d = %+v (at %q), want %+v", i, g.Info, text[g.Start:min(len(text), g.Start+20)], w)
+		}
+	}
+}

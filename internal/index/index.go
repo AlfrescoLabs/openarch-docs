@@ -169,7 +169,7 @@ func (x *Index) Build(ctx context.Context, opts BuildOptions) (*BuildResult, err
 		if err != nil {
 			return nil, err
 		}
-		if err := x.replace(ctx, d, chunks(text)); err != nil {
+		if err := x.replace(ctx, d, pieces(d, text)); err != nil {
 			return nil, err
 		}
 		res.Updated++
@@ -231,7 +231,7 @@ func (x *Index) Pending(ctx context.Context, root string) (texts, embeddings int
 	return texts, embeddings, err
 }
 
-func (x *Index) replace(ctx context.Context, d doc, pieces []string) error {
+func (x *Index) replace(ctx context.Context, d doc, pieces []piece) error {
 	tx, err := x.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -240,9 +240,10 @@ func (x *Index) replace(ctx context.Context, d doc, pieces []string) error {
 	if err := removeTx(ctx, tx, d.path); err != nil {
 		return err
 	}
-	for _, text := range pieces {
+	for _, pc := range pieces {
+		text := pc.text
 		r, err := tx.ExecContext(ctx, `INSERT INTO chunks(path, source, origin, page, kind, role, method, cite, date, sender, text) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-			d.path, d.source, d.origin, d.page, d.kind, d.role, d.method, d.cite, d.date, d.sender, text)
+			d.path, d.source, d.origin, d.page, d.kind, d.role, d.method, pc.cite, pc.date, pc.sender, text)
 		if err != nil {
 			return err
 		}
@@ -252,7 +253,7 @@ func (x *Index) replace(ctx context.Context, d doc, pieces []string) error {
 		}
 		// The citation (file name, email subject) is searchable too: a file
 		// named attachment-18.pdf is found by the subject of its email.
-		if _, err := tx.ExecContext(ctx, `INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)`, id, d.cite+"\n"+text); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)`, id, pc.cite+"\n"+text); err != nil {
 			return err
 		}
 	}

@@ -93,8 +93,9 @@ func TestBuildAndSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Two email bodies, the reference, the text original and one note.
-	if res.Files != 5 || res.Updated != 5 || res.Chunks != 5 || res.Embedded != 5 || res.Pending != 0 {
+	// Two email bodies (the outer one in two pieces: its text and the quoted
+	// forward), the reference, the text original and one note.
+	if res.Files != 5 || res.Updated != 5 || res.Chunks != 6 || res.Embedded != 6 || res.Pending != 0 {
 		t.Fatalf("build = %+v", res)
 	}
 
@@ -109,6 +110,13 @@ func TestBuildAndSearch(t *testing.T) {
 	if h.Cite != `reenvio.eml, email "Contestación expediente 9999" of 2026-10-29T12:00:00+01:00` || h.Sender != "Distribuidora Ejemplo <avisos@example.com>" ||
 		!strings.HasSuffix(h.Path, "/message-1/message.txt") || h.Source != "reenvio.eml" {
 		t.Errorf("first hit = %+v", h)
+	}
+
+	// The quoted forward is its own chunk, with the sender of the quoted message.
+	hits, err = x.Search(ctx, SearchOptions{Query: "plano fotos adjunto"})
+	if err != nil || len(hits) == 0 || hits[0].Sender != "Instalador Ejemplo <instalador@example.net>" ||
+		!strings.Contains(hits[0].Cite, "quoted message from Instalador Ejemplo <instalador@example.net> of mié, 29 oct 2026 a las 18:00") {
+		t.Errorf("quoted hit = %+v, %v", hits, err)
 	}
 
 	hits, err = x.Search(ctx, SearchOptions{Query: "punto de recarga", Roles: []string{casefile.RoleReference}})
@@ -153,14 +161,14 @@ func TestBuildAndSearch(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err = x.Build(ctx, BuildOptions{Root: root})
-	if err != nil || res.Removed != 1 || res.Chunks != 5 {
+	if err != nil || res.Removed != 1 || res.Chunks != 6 {
 		t.Fatalf("after note removal = %+v, %v", res, err)
 	}
 
 	// Another embedding model embeds every chunk again.
 	emb.inputs = 0
 	res, err = x.Build(ctx, BuildOptions{Root: root, Embedder: emb, Model: "m2"})
-	if err != nil || res.Embedded != 5 || emb.inputs != 5 {
+	if err != nil || res.Embedded != 6 || emb.inputs != 6 {
 		t.Fatalf("model change = %+v, %v, inputs %d", res, err, emb.inputs)
 	}
 }
@@ -169,7 +177,7 @@ func TestBuildNoEmbed(t *testing.T) {
 	root := newCase(t)
 	x := open(t, root)
 	res, err := x.Build(context.Background(), BuildOptions{Root: root})
-	if err != nil || res.Pending != 5 || res.Embedded != 0 {
+	if err != nil || res.Pending != 6 || res.Embedded != 0 {
 		t.Fatalf("build = %+v, %v", res, err)
 	}
 	hits, err := x.Search(context.Background(), SearchOptions{Query: "instalacion"})
@@ -178,7 +186,7 @@ func TestBuildNoEmbed(t *testing.T) {
 	}
 	// The pending embeddings are made by the next run with a model.
 	res, err = x.Build(context.Background(), BuildOptions{Root: root, Embedder: &fakeEmbedder{}, Model: "m1"})
-	if err != nil || res.Embedded != 5 || res.Pending != 0 {
+	if err != nil || res.Embedded != 6 || res.Pending != 0 {
 		t.Fatalf("second build = %+v, %v", res, err)
 	}
 }
@@ -188,7 +196,7 @@ func TestBuildTooLong(t *testing.T) {
 	x := open(t, root)
 	// Most inputs of the case are longer than 120 characters with their citation.
 	res, err := x.Build(context.Background(), BuildOptions{Root: root, Embedder: &fakeEmbedder{maxLen: 120}, Model: "m1"})
-	if err != nil || res.Embedded != 5 || res.Pending != 0 {
+	if err != nil || res.Embedded != 6 || res.Pending != 0 {
 		t.Fatalf("build = %+v, %v", res, err)
 	}
 	// Full text search still sees the whole chunk.
