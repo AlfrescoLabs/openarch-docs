@@ -111,3 +111,16 @@ A citation check needs no model: for each sentence it counts the content words (
 - each chat message (time, sender, text or attachment name).
 
 Quoted dates are read in every supported language with the month names in `internal/lang` ("mié, 29 oct 2026 a las 18:00", "Fri, Oct 30, 2026 at 5:51 PM", "29 de outubro de 2026 18:00", "30/10/2026 7:51"; numeric dates are day first unless the month would pass 12). Times stay in the time zone of the source. A message that is an email in one file and a quoted forward in another is listed once, as the email.
+
+## Describe and look
+
+`describe` writes a text description, with the vision model of the profile, for:
+
+- each PDF page image with large images (`images` > 0), or every page with `--all-pages`,
+- each image original, attachment, inline image, chat photo and zip image of at least about 200 x 200 pixels. Smaller ones (logos in signatures) are skipped; HEIC and WebP are unsupported.
+
+Images are scaled down to 1600 pixels on the longest side and sent inline as data URLs. The prompt asks for four headings (`Type`, `Text`, `Content`, `Location`), every readable text exactly as written, no guesses, and Content and Location in the main language of the case (`lang.Detect` over email and page texts) or `--lang`. Text before the first heading and closing offers ("Let me know...") are cut. The file is `describe.txt` next to an image, or `page-NNN.describe.txt` next to a page image; the manifest entry (kind `description`, method `vision`) records `from`, `page` and `model`. `index` indexes descriptions and cites them as "(image description)".
+
+`look` sends one or more images and one question to the vision model. An image is a path in the case folder or `<pdf>#<page>`. Each image is labeled "Image N: name" in the message. The answer language follows the question. Nothing is saved.
+
+With the large profile both commands unload the agent and chat models first (`docker model unload`), so the vision model has memory.

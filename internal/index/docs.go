@@ -15,6 +15,7 @@ import (
 	"github.com/AlfrescoLabs/openarch-docs/internal/chat"
 	"github.com/AlfrescoLabs/openarch-docs/internal/extract"
 	"github.com/AlfrescoLabs/openarch-docs/internal/ingest"
+	"github.com/AlfrescoLabs/openarch-docs/internal/vision"
 )
 
 // RoleNote marks notes and drafts: interpretations, not sources.
@@ -46,7 +47,7 @@ type doc struct {
 }
 
 // textKinds are the derived files that hold text.
-var textKinds = []string{ingest.KindBody, ingest.KindChatJSON, extract.KindPageText, extract.KindPageOCR, extract.KindImageOCR}
+var textKinds = []string{ingest.KindBody, ingest.KindChatJSON, extract.KindPageText, extract.KindPageOCR, extract.KindImageOCR, vision.KindDescription}
 
 // collect lists the texts of the case folder: derived texts from the
 // manifest, text originals, and the notes.
@@ -111,8 +112,11 @@ func citation(d casefile.Derived, byPath map[string]casefile.Derived) string {
 	if d.Page > 0 {
 		name += fmt.Sprintf(" p.%d", d.Page)
 	}
-	if d.Method == extract.MethodOCR {
+	switch d.Method {
+	case extract.MethodOCR:
 		name += " (OCR)"
+	case vision.MethodVision:
+		name += " (image description)"
 	}
 	return name
 }

@@ -5,12 +5,14 @@ package models
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"os/exec"
 	"slices"
 	"strings"
 	"time"
@@ -108,16 +110,45 @@ func (c *Client) Embed(ctx context.Context, model string, inputs []string) ([][]
 	return out, nil
 }
 
-// Message is one chat message.
+// Message is one chat message. Content is a string, or a []Part for a
+// message with images.
 type Message struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+// Part is a piece of a message with images: text or an image.
+type Part struct {
+	Type     string    `json:"type"`
+	Text     string    `json:"text,omitempty"`
+	ImageURL *ImageURL `json:"image_url,omitempty"`
+}
+
+// ImageURL holds an image as a data URL.
+type ImageURL struct {
+	URL string `json:"url"`
+}
+
+// TextPart returns a text part.
+func TextPart(text string) Part { return Part{Type: "text", Text: text} }
+
+// ImagePart returns an image part with the image inline, as a data URL.
+func ImagePart(mediaType string, data []byte) Part {
+	return Part{Type: "image_url", ImageURL: &ImageURL{URL: "data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data)}}
 }
 
 // ChatOptions tune a chat call.
 type ChatOptions struct {
 	Temperature float64
 	MaxTokens   int
+}
+
+// Unload asks Docker Model Runner to free the memory of the models. Errors
+// are ignored: a model that is not loaded is fine.
+func Unload(ctx context.Context, names ...string) {
+	for _, n := range names {
+		_ = exec.CommandContext(ctx, "docker", "model", "unload", n).Run()
+	}
 }
 
 // Chat returns the answer of the model to messages.

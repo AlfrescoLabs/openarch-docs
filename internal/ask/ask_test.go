@@ -77,10 +77,10 @@ func TestRun(t *testing.T) {
 	if !slices.Equal(res.Cited, []int{1, 2}) || !slices.Equal(res.Unknown, []int{7}) {
 		t.Errorf("cited %v unknown %v", res.Cited, res.Unknown)
 	}
-	if len(chat.messages) != 2 || chat.messages[0].Role != "system" || !strings.Contains(chat.messages[0].Content, "language of the question") {
+	if len(chat.messages) != 2 || chat.messages[0].Role != "system" || !strings.Contains(chat.messages[0].Content.(string), "language of the question") {
 		t.Fatalf("messages = %+v", chat.messages)
 	}
-	user := chat.messages[1].Content
+	user := chat.messages[1].Content.(string)
 	for _, want := range []string{`role="case" file="aviso.eml, email 'Plano'`, `sender="Ana (ana@example.com)"`, `role="reference" file="ley.txt"`, "Question: ¿Dónde está el sotano?", "Answer in Spanish."} {
 		if !strings.Contains(user, want) {
 			t.Errorf("user message has no %q:\n%s", want, user)
@@ -91,7 +91,7 @@ func TestRun(t *testing.T) {
 	if err != nil || len(res.Sources) != 3 {
 		t.Fatalf("with notes = %+v, %v", res, err)
 	}
-	if !strings.Contains(chat.messages[1].Content, `role="note" file="note notes/estado.md"`) {
+	if !strings.Contains(chat.messages[1].Content.(string), `role="note" file="note notes/estado.md"`) {
 		t.Error("note not marked as note")
 	}
 }
@@ -112,7 +112,7 @@ func TestRunRetry(t *testing.T) {
 	if err != nil || chat.calls != 2 || res.Answer != "Está en el sótano -2 [1]." || res.Warning != "" {
 		t.Fatalf("retry = %+v, %v, calls %d", res, err, chat.calls)
 	}
-	if last := chat.messages[len(chat.messages)-1]; last.Role != "user" || !strings.Contains(last.Content, "no sentences") {
+	if last := chat.messages[len(chat.messages)-1]; last.Role != "user" || !strings.Contains(last.Content.(string), "no sentences") {
 		t.Errorf("retry message = %+v", last)
 	}
 	chat = &fakeChat{answers: []string{"[1]"}}
@@ -141,7 +141,7 @@ func TestSameFileIsOneSource(t *testing.T) {
 	}
 	chat := &fakeChat{answers: []string{"Hay contadores en el sotano [1]."}}
 	res, err := Run(context.Background(), Options{Question: "sotano contadores", Index: x, Chat: chat, ChatModel: "m"})
-	if err != nil || len(res.Sources) != 1 || !strings.Contains(chat.messages[1].Content, "(part 2 of source 1)") {
+	if err != nil || len(res.Sources) != 1 || !strings.Contains(chat.messages[1].Content.(string), "(part 2 of source 1)") {
 		t.Errorf("sources = %+v, %v", res.Sources, err)
 	}
 }

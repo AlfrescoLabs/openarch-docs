@@ -100,6 +100,8 @@ type Derived struct {
 	Page int `json:"page,omitempty"`
 	// Method is how the text was made: "text-layer" or "ocr".
 	Method string `json:"method,omitempty"`
+	// Model is the model that wrote the file, for descriptions.
+	Model string `json:"model,omitempty"`
 	// Languages are the OCR languages, as ISO 639-1 codes.
 	Languages []string `json:"languages,omitempty"`
 	// Images is the number of large images on the page, such as photos or plans.
