@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/AlfrescoLabs/openarch-docs/internal/ask"
 	"github.com/AlfrescoLabs/openarch-docs/internal/index"
+	"github.com/AlfrescoLabs/openarch-docs/internal/models"
+	"github.com/AlfrescoLabs/openarch-docs/internal/output"
 )
 
 type askResult struct{ *ask.Result }
@@ -51,6 +54,7 @@ func newAskCmd(app *App) *cobra.Command {
 	var (
 		limit     int
 		withNotes bool
+		think     bool
 	)
 	cmd := &cobra.Command{
 		Use:   "ask <question>",
@@ -90,9 +94,12 @@ Run index first.`,
 			defer func() { _ = x.Close() }()
 			client := app.modelClient()
 			res, err := ask.Run(cmd.Context(), ask.Options{
-				Question: strings.Join(args, " "), Limit: limit, WithNotes: withNotes, Index: x,
+				Question: strings.Join(args, " "), Limit: limit, WithNotes: withNotes, Think: think, Index: x,
 				Embedder: client, EmbedModel: p.Embed, Chat: client, ChatModel: p.Chat,
 			})
+			if errors.Is(err, models.ErrNoAnswer) {
+				return output.NewError(output.ExitRemote, err.Error(), "Ask a shorter question, or run without --think.")
+			}
 			if err != nil {
 				model := p.Chat
 				if strings.Contains(err.Error(), p.Embed) {
@@ -105,5 +112,6 @@ Run index first.`,
 	}
 	cmd.Flags().IntVar(&limit, "limit", 8, "number of sources the model reads")
 	cmd.Flags().BoolVar(&withNotes, "with-notes", false, "add notes to the sources, marked as interpretations")
+	cmd.Flags().BoolVar(&think, "think", false, "let models that think before they answer (GLM 4.7 Flash) do so: slower")
 	return cmd
 }

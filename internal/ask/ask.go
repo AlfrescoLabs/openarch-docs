@@ -31,7 +31,9 @@ type Options struct {
 	// Limit is the number of sources the model reads.
 	Limit int
 	// WithNotes adds notes to the sources. They are interpretations, not evidence.
-	WithNotes  bool
+	WithNotes bool
+	// Think lets the model think before it answers: slower, sometimes better.
+	Think      bool
 	Index      *index.Index
 	Embedder   index.Embedder
 	EmbedModel string
@@ -153,7 +155,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		{Role: "system", Content: instruction},
 		{Role: "user", Content: b.String()},
 	}
-	chatOpts := models.ChatOptions{Temperature: 0.1, MaxTokens: 1024}
+	chatOpts := models.ChatOptions{Temperature: 0.1, MaxTokens: 2048, Think: opts.Think}
 	answer, err := opts.Chat.Chat(ctx, opts.ChatModel, messages, chatOpts)
 	if err != nil {
 		return nil, err

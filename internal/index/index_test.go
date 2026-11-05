@@ -5,6 +5,8 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode"
@@ -193,6 +195,55 @@ func TestBuildTooLong(t *testing.T) {
 	hits, err := x.Search(context.Background(), SearchOptions{Query: "instalacion", Limit: 1})
 	if err != nil || len(hits) != 1 || !strings.Contains(hits[0].Text, "fecha de instalacion") {
 		t.Errorf("hits = %+v, %v", hits, err)
+	}
+}
+
+func TestSearchPage(t *testing.T) {
+	root := t.TempDir()
+	m, _ := casefile.Load(root)
+	// Ten pages that all talk about the conditions; only page 6 has photos.
+	for p := 1; p <= 10; p++ {
+		text := "Condiciones tecnicas de suministro, condiciones generales y condiciones particulares del expediente."
+		if p == 6 {
+			text = "Fotografias del cuarto de contadores y de la centralizacion."
+		}
+		d := casefile.Derived{Source: "c.pdf", From: "c.pdf", Page: p, Kind: "page-text", Method: "text-layer"}
+		if _, err := m.WriteDerived(root, "extracted/c/page-"+strconv.Itoa(p)+".txt", []byte(text), d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.Originals = append(m.Originals, casefile.Original{Path: "c.pdf", Kind: "pdf", Role: casefile.RoleCase})
+	if err := casefile.Save(root, m); err != nil {
+		t.Fatal(err)
+	}
+	x := open(t, root)
+	emb := &fakeEmbedder{}
+	if _, err := x.Build(context.Background(), BuildOptions{Root: root, Embedder: emb, Model: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := x.Search(context.Background(), SearchOptions{Query: "las condiciones de la página 6", Embedder: emb, Model: "m", Limit: 3})
+	if err != nil || len(hits) == 0 || hits[0].Page != 6 || !slices.Contains(hits[0].Matched, "page") {
+		t.Fatalf("hits = %+v, %v", hits, err)
+	}
+	// Without a page in the query, page 6 is not first.
+	hits, _ = x.Search(context.Background(), SearchOptions{Query: "las condiciones", Embedder: emb, Model: "m", Limit: 3})
+	if len(hits) == 0 || hits[0].Page == 6 {
+		t.Errorf("no page hits = %+v", hits)
+	}
+}
+
+func TestCitation(t *testing.T) {
+	byPath := map[string]casefile.Derived{
+		"x/attachments/attachment-18.pdf": {Attachment: "attachment-18.pdf", Message: &casefile.MessageInfo{Subject: "Condiciones de suministro"}},
+		"x/media/foto.jpg":                {Attachment: "foto.jpg", Chat: &casefile.ChatInfo{Sender: "Ana", Time: "2026-09-10T18:10:04"}},
+	}
+	page := casefile.Derived{Source: "a.eml", From: "x/attachments/attachment-18.pdf", Page: 6, Kind: "page-text", Method: "text-layer"}
+	if got := citation(page, byPath); got != `attachment-18.pdf, attached to email "Condiciones de suministro" p.6` {
+		t.Errorf("page = %q", got)
+	}
+	photo := casefile.Derived{Source: "chat.zip", From: "x/media/foto.jpg", Kind: "description", Method: "vision"}
+	if got := citation(photo, byPath); got != "foto.jpg, sent in the chat by Ana at 2026-09-10T18:10:04 (image description)" {
+		t.Errorf("photo = %q", got)
 	}
 }
 

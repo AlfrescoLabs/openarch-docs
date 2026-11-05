@@ -83,12 +83,12 @@ HEIC and WebP files are reported as unsupported: tesseract cannot read them.
 
 - Texts: email bodies (`message.txt`), chat messages (one line per message, with time and sender), page texts and OCR from `extract`, text originals, and every `.md` and `.txt` file in `notes/`.
 - Each text is split into chunks of about 800 characters at paragraph, line or sentence ends, with 120 characters of overlap. A change of these settings splits every text again. The rare chunk that is still longer than the 512 tokens of mxbai is cut for its embedding only. Chunks with fewer than 20 letters and digits (OCR noise of photos) are dropped.
-- Each chunk keeps its citation (file or attachment name, email subject and date, page, "(OCR)"), its path, the original, the role (`case`, `reference`, `note`), the sender and the date.
+- Each chunk keeps its citation (file or attachment name; for a file from an email, the email subject; for a chat photo, the sender and time; page; "(OCR)" or "(image description)"), its path, the original, the role (`case`, `reference`, `note`), the sender and the date.
 - Full text search: FTS5 with `unicode61 remove_diacritics 2`, so queries without accents find accented words. Short common words of each supported language (`StopWords` in `internal/lang`) are left out of queries; question words such as "donde" or "where" stay.
 - Embeddings: the embed model of the profile, with the citation before the chunk text. Queries get the mxbai instruction prefix. Vectors are normalized and compared by dot product over all chunks (case folders are small).
 - Only texts whose SHA-256 changed are split again. Chunks without embeddings (after `--no-embed`, or after a change of embedding model) get them on the next run.
 
-`search` merges the BM25 list and the embedding list with reciprocal rank fusion (k = 60). Each hit says which search found it (`text`, `meaning`).
+`search` merges the BM25 list and the embedding list with reciprocal rank fusion (k = 60). The citation is part of the full text of each chunk, so a file named `attachment-18.pdf` is found by the subject of the email it came with. When the query names a page ("página 6", "page 6", "pág. 6", "p. 6"; `PageWords` in `internal/lang`), two more lists with only the chunks of that page join the fusion with weight 3. Each hit says which search found it (`text`, `meaning`, `page`).
 
 Models run on Docker Model Runner at `--model-url` (default `http://localhost:12434/engines/v1`, env `OPENARCH_DOCS_MODEL_URL`). `--profile` (env `OPENARCH_DOCS_PROFILE`) picks the models.
 
@@ -96,7 +96,7 @@ Models run on Docker Model Runner at `--model-url` (default `http://localhost:12
 
 `ask` searches the index for the question (case documents and references; notes only with `--with-notes`), and gives the best chunks to the chat model of the profile as numbered sources. Each source is between `<source n="N" role="..." file="..." sender="...">` and `</source>`. Pieces of the same file become one source, labeled "part K of source N". Each source shows its role (`case`, `reference`, `note`), its citation and its sender. The question comes before and after the sources.
 
-The system message asks the model to answer in the language of the question, to cite a source for every fact as `[n]`, to say plainly when the sources do not hold the answer, to keep facts apart from interpretations, to treat notes as interpretations and references as rules, and to blame nobody without a source. The model makes no tool calls, so small models work.
+The system message asks the model to answer in the language of the question, to cite a source for every fact as `[n]`, to say plainly when the sources do not hold the answer, to keep facts apart from interpretations, to treat notes as interpretations and references as rules, and to blame nobody without a source. The model makes no tool calls, so small models work. Thinking is off by default (`chat_template_kwargs.enable_thinking = false`; templates without it ignore it): GLM 4.7 Flash used all its tokens to think on long questions and wrote no answer. `--think` turns it on. An empty answer that stops for length is an error.
 
 The answer must be 1 to 5 sentences with source numbers. An answer with no sentences (only citations) gets one retry with a reminder, then a `warning`. The result lists the sources, marks the cited ones, and lists cited numbers that are not sources (`unknown`): a sign that the model made up a citation.
 

@@ -13,6 +13,7 @@ import (
 	"math"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -109,8 +110,8 @@ func (x *Index) Build(ctx context.Context, opts BuildOptions) (*BuildResult, err
 		return nil, err
 	}
 	res := &BuildResult{Files: len(docs), Model: opts.Model, IndexFile: File}
-	// Other chunk settings make other chunks: split every text again.
-	chunking := fmt.Sprintf("%d/%d/%d", chunkSize, chunkOverlap, minLetters)
+	// Other chunk or citation settings make other chunks: split every text again.
+	chunking := fmt.Sprintf("%d/%d/%d/%d", chunkSize, chunkOverlap, minLetters, citeVersion)
 	old, err := x.meta(ctx, "chunking")
 	if err != nil {
 		return nil, err
@@ -213,7 +214,9 @@ func (x *Index) replace(ctx context.Context, d doc, pieces []string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)`, id, text); err != nil {
+		// The citation (file name, email subject) is searchable too: a file
+		// named attachment-18.pdf is found by the subject of its email.
+		if _, err := tx.ExecContext(ctx, `INSERT INTO chunks_fts(rowid, text) VALUES (?, ?)`, id, d.cite+"\n"+text); err != nil {
 			return err
 		}
 	}
@@ -292,8 +295,9 @@ func (x *Index) embedMissing(ctx context.Context, opts BuildOptions) (int, error
 		if err := tx.Commit(); err != nil {
 			return done, err
 		}
+		before := done
 		done += len(ids)
-		if opts.Progress != nil {
+		if opts.Progress != nil && (done/256 > before/256 || len(ids) < embedBatch) {
 			_, _ = fmt.Fprintf(opts.Progress, "Embedded %d chunks\n", done)
 		}
 	}
@@ -353,7 +357,8 @@ type Hit struct {
 	Date   string  `json:"date,omitempty"`
 	Sender string  `json:"sender,omitempty"`
 	Text   string  `json:"text"`
-	// Matched tells which searches found the chunk: "text", "meaning" or both.
+	// Matched tells which searches found the chunk: "text", "meaning", and
+	// "page" when the query names its page.
 	Matched []string `json:"matched"`
 }
 
@@ -363,6 +368,9 @@ const candidates = 50
 // rrfK is the constant of reciprocal rank fusion.
 const rrfK = 60
 
+// pageWeight is the weight of the lists of chunks from a page that the query names.
+const pageWeight = 3.0
+
 // Search runs full text search and, with an Embedder, semantic search, and
 // merges the two lists with reciprocal rank fusion.
 func (x *Index) Search(ctx context.Context, opts SearchOptions) ([]Hit, error) {
@@ -371,22 +379,45 @@ func (x *Index) Search(ctx context.Context, opts SearchOptions) ([]Hit, error) {
 	}
 	scores := map[int64]float64{}
 	matched := map[int64][]string{}
-	ftsIDs, err := x.searchText(ctx, opts.Query)
-	if err != nil {
-		return nil, err
+	fuse := func(ids []int64, how string, weight float64) {
+		for i, id := range ids {
+			scores[id] += weight / float64(rrfK+i+1)
+			if !slices.Contains(matched[id], how) {
+				matched[id] = append(matched[id], how)
+			}
+		}
 	}
-	for i, id := range ftsIDs {
-		scores[id] += 1.0 / float64(rrfK+i+1)
-		matched[id] = append(matched[id], "text")
-	}
+	// A question about "page 6" adds lists with only the chunks of that page,
+	// with pageWeight: the user named the page.
+	pages := lang.Pages(opts.Query)
+	var query []float32
 	if opts.Embedder != nil {
-		vecIDs, err := x.searchMeaning(ctx, opts)
+		vecs, err := opts.Embedder.Embed(ctx, opts.Model, []string{queryPrefix + opts.Query})
 		if err != nil {
 			return nil, err
 		}
-		for i, id := range vecIDs {
-			scores[id] += 1.0 / float64(rrfK+i+1)
-			matched[id] = append(matched[id], "meaning")
+		query = vecs[0]
+	}
+	filters := [][]int{nil}
+	if len(pages) > 0 {
+		filters = append(filters, pages)
+	}
+	for _, pg := range filters {
+		textHow, meaningHow, weight := "text", "meaning", 1.0
+		if pg != nil {
+			textHow, meaningHow, weight = "page", "page", pageWeight
+		}
+		ftsIDs, err := x.searchText(ctx, opts.Query, pg)
+		if err != nil {
+			return nil, err
+		}
+		fuse(ftsIDs, textHow, weight)
+		if query != nil {
+			vecIDs, err := x.searchMeaning(ctx, query, pg)
+			if err != nil {
+				return nil, err
+			}
+			fuse(vecIDs, meaningHow, weight)
 		}
 	}
 	ids := make([]int64, 0, len(scores))
@@ -429,7 +460,7 @@ func (x *Index) hit(ctx context.Context, id int64) (Hit, error) {
 
 // searchText returns chunk ids by BM25 rank. Each word of the query is a term,
 // and any term can match.
-func (x *Index) searchText(ctx context.Context, query string) ([]int64, error) {
+func (x *Index) searchText(ctx context.Context, query string, pages []int) ([]int64, error) {
 	words := strings.FieldsFunc(query, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 	var terms []string
 	for _, w := range words {
@@ -440,8 +471,8 @@ func (x *Index) searchText(ctx context.Context, query string) ([]int64, error) {
 	if len(terms) == 0 {
 		return nil, nil
 	}
-	rows, err := x.db.QueryContext(ctx, `SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts) LIMIT ?`,
-		strings.Join(terms, " OR "), candidates)
+	q := `SELECT f.rowid FROM chunks_fts f JOIN chunks c ON c.id = f.rowid WHERE chunks_fts MATCH ?` + pageFilter("c.page", pages) + ` ORDER BY bm25(chunks_fts) LIMIT ?`
+	rows, err := x.db.QueryContext(ctx, q, strings.Join(terms, " OR "), candidates)
 	if err != nil {
 		return nil, err
 	}
@@ -471,14 +502,22 @@ func foldAccents(s string) string {
 	return b.String()
 }
 
-// searchMeaning returns chunk ids by cosine similarity to the query.
-func (x *Index) searchMeaning(ctx context.Context, opts SearchOptions) ([]int64, error) {
-	vecs, err := opts.Embedder.Embed(ctx, opts.Model, []string{queryPrefix + opts.Query})
-	if err != nil {
-		return nil, err
+// pageFilter returns an SQL condition that keeps the pages, or "" for all.
+// The pages are numbers, so they are safe to write into the query.
+func pageFilter(column string, pages []int) string {
+	if len(pages) == 0 {
+		return ""
 	}
-	q := vecs[0]
-	rows, err := x.db.QueryContext(ctx, `SELECT id, embedding FROM chunks WHERE embedding IS NOT NULL`)
+	s := make([]string, len(pages))
+	for i, p := range pages {
+		s[i] = strconv.Itoa(p)
+	}
+	return " AND " + column + " IN (" + strings.Join(s, ",") + ")"
+}
+
+// searchMeaning returns chunk ids by cosine similarity to the query vector.
+func (x *Index) searchMeaning(ctx context.Context, q []float32, pages []int) ([]int64, error) {
+	rows, err := x.db.QueryContext(ctx, `SELECT id, embedding FROM chunks WHERE embedding IS NOT NULL`+pageFilter("page", pages))
 	if err != nil {
 		return nil, err
 	}

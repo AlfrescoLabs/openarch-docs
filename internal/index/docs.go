@@ -21,6 +21,9 @@ import (
 // RoleNote marks notes and drafts: interpretations, not sources.
 const RoleNote = "note"
 
+// citeVersion grows when citations change, so the index is built again.
+const citeVersion = 3
+
 // Chunk sizes, in characters. mxbai-embed-large reads 512 tokens. 800
 // characters of prose are about 250 tokens; numbers, addresses and OCR noise
 // take more, and embedOne cuts the rare piece that is still too long.
@@ -96,8 +99,18 @@ func citation(d casefile.Derived, byPath map[string]casefile.Derived) string {
 	name := path.Base(d.Source)
 	if d.From != "" && d.From != d.Source {
 		name = path.Base(d.From)
-		if f, ok := byPath[d.From]; ok && f.Attachment != "" {
-			name = path.Base(f.Attachment)
+		if f, ok := byPath[d.From]; ok {
+			if f.Attachment != "" {
+				name = path.Base(f.Attachment)
+			}
+			// The email or chat message a file came with tells what it is
+			// when its name does not, such as "attachment-18.pdf".
+			switch {
+			case f.Message != nil && f.Message.Subject != "":
+				name += fmt.Sprintf(", attached to email \"%s\"", f.Message.Subject)
+			case f.Chat != nil:
+				name += fmt.Sprintf(", sent in the chat by %s at %s", f.Chat.Sender, f.Chat.Time)
+			}
 		}
 	}
 	switch {

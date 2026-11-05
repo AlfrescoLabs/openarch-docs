@@ -120,3 +120,18 @@ func TestDetect(t *testing.T) {
 		t.Error("no language in numbers")
 	}
 }
+
+func TestPages(t *testing.T) {
+	for text, want := range map[string][]int{
+		"¿Qué muestran las fotos de la página 6 de las condiciones?": {6},
+		"see page 4 and p. 12":     {4, 12},
+		"à la page 3":              {3},
+		"na pág. 2 e na página 2":  {2},
+		"el expediente 0004417785": nil,
+		"pagar 6 euros":            nil,
+	} {
+		if got := Pages(text); !slices.Equal(got, want) {
+			t.Errorf("Pages(%q) = %v, want %v", text, got, want)
+		}
+	}
+}

@@ -61,3 +61,30 @@ func TestProfiles(t *testing.T) {
 		t.Error("huge is not a profile")
 	}
 }
+
+func TestChat(t *testing.T) {
+	var got map[string]any
+	answer := `{"choices":[{"finish_reason":"stop","message":{"content":" Hola "}}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = nil
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = w.Write([]byte(answer))
+	}))
+	defer srv.Close()
+	c := NewClient(srv.URL)
+	text, err := c.Chat(context.Background(), "m", []Message{{Role: "user", Content: "hi"}}, ChatOptions{MaxTokens: 10})
+	if err != nil || text != "Hola" {
+		t.Fatalf("Chat = %q, %v", text, err)
+	}
+	kw, _ := got["chat_template_kwargs"].(map[string]any)
+	if kw["enable_thinking"] != false || got["max_tokens"] != float64(10) {
+		t.Errorf("request = %v", got)
+	}
+	if _, err := c.Chat(context.Background(), "m", nil, ChatOptions{Think: true}); err != nil || got["chat_template_kwargs"] != nil {
+		t.Errorf("think request = %v, %v", got, err)
+	}
+	answer = `{"choices":[{"finish_reason":"length","message":{"content":""}}]}`
+	if _, err := c.Chat(context.Background(), "m", nil, ChatOptions{}); !errors.Is(err, ErrNoAnswer) {
+		t.Errorf("err = %v", err)
+	}
+}

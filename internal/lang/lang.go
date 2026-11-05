@@ -5,6 +5,7 @@ package lang
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"unicode"
@@ -33,6 +34,8 @@ type Language struct {
 	ChatFileAttached []string
 	// StopWords are short common words that full text search ignores.
 	StopWords []string
+	// PageWords are the words and short forms for "page", without accents.
+	PageWords []string
 	// Months are the month names and short forms, without accents, from
 	// January to December. Mail clients write them in quoted dates.
 	Months [12][]string
@@ -49,6 +52,7 @@ var All = []Language{
 		ChatAttached:     []string{"attached"},
 		ChatFileAttached: []string{"file attached"},
 		StopWords:        []string{"the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "by", "for", "with", "from", "is", "are", "was", "were", "be", "been", "it", "its", "this", "that", "these", "those", "as", "not", "no", "but", "if", "so", "do", "does", "did", "has", "have", "had", "i", "you", "he", "she", "we", "they", "me", "my", "your", "our", "their"},
+		PageWords:        []string{"page", "pages", "pg", "p"},
 		Months:           [12][]string{{"january", "jan"}, {"february", "feb"}, {"march", "mar"}, {"april", "apr"}, {"may"}, {"june", "jun"}, {"july", "jul"}, {"august", "aug"}, {"september", "sep", "sept"}, {"october", "oct"}, {"november", "nov"}, {"december", "dec"}},
 	},
 	{
@@ -60,6 +64,7 @@ var All = []Language{
 		ChatAttached:     []string{"adjunto"},
 		ChatFileAttached: []string{"archivo adjunto"},
 		StopWords:        []string{"el", "la", "los", "las", "un", "una", "unos", "unas", "y", "o", "u", "de", "del", "al", "a", "en", "con", "por", "para", "sin", "sobre", "es", "son", "era", "fue", "ser", "estar", "esta", "este", "esto", "estos", "estas", "ese", "esa", "eso", "lo", "le", "les", "se", "su", "sus", "mi", "mis", "tu", "tus", "que", "muy", "mas", "pero", "si", "no", "ya", "hay", "me", "te", "nos", "os", "ha", "han", "he"},
+		PageWords:        []string{"pagina", "paginas", "pag", "p"},
 		Months:           [12][]string{{"enero", "ene"}, {"febrero", "feb"}, {"marzo", "mar"}, {"abril", "abr"}, {"mayo", "may"}, {"junio", "jun"}, {"julio", "jul"}, {"agosto", "ago"}, {"septiembre", "setiembre", "sep", "sept"}, {"octubre", "oct"}, {"noviembre", "nov"}, {"diciembre", "dic"}},
 	},
 	{
@@ -71,6 +76,7 @@ var All = []Language{
 		ChatAttached:     []string{"pièce jointe"},
 		ChatFileAttached: []string{"fichier joint"},
 		StopWords:        []string{"le", "la", "les", "un", "une", "des", "et", "ou", "de", "du", "au", "aux", "a", "en", "dans", "sur", "par", "pour", "avec", "sans", "est", "sont", "etait", "etre", "ce", "cet", "cette", "ces", "se", "sa", "son", "ses", "mon", "ma", "mes", "ton", "ta", "tes", "que", "qui", "ou", "ne", "pas", "plus", "mais", "si", "il", "elle", "ils", "elles", "nous", "vous", "je", "tu", "on", "y"},
+		PageWords:        []string{"page", "pages", "p"},
 		Months:           [12][]string{{"janvier", "janv"}, {"fevrier", "fevr", "fev"}, {"mars"}, {"avril", "avr"}, {"mai"}, {"juin"}, {"juillet", "juil"}, {"aout"}, {"septembre", "sept"}, {"octobre", "oct"}, {"novembre", "nov"}, {"decembre", "dec"}}, //nolint:misspell // French "decembre" is "décembre" without the accent.
 	},
 	{
@@ -82,6 +88,7 @@ var All = []Language{
 		ChatAttached:     []string{"anexado", "anexo"},
 		ChatFileAttached: []string{"arquivo anexado", "ficheiro anexado"},
 		StopWords:        []string{"o", "a", "os", "as", "um", "uma", "uns", "umas", "e", "ou", "de", "do", "da", "dos", "das", "ao", "aos", "em", "no", "na", "nos", "nas", "por", "para", "com", "sem", "sobre", "e", "sao", "era", "foi", "ser", "estar", "este", "esta", "isto", "esse", "essa", "isso", "se", "seu", "sua", "seus", "suas", "meu", "minha", "que", "muito", "mais", "mas", "sim", "nao", "ja", "ha", "me", "te", "lhe"},
+		PageWords:        []string{"pagina", "paginas", "pag", "p"},
 		Months:           [12][]string{{"janeiro", "jan"}, {"fevereiro", "fev"}, {"marco", "mar"}, {"abril", "abr"}, {"maio", "mai"}, {"junho", "jun"}, {"julho", "jul"}, {"agosto", "ago"}, {"setembro", "set"}, {"outubro", "out"}, {"novembro", "nov"}, {"dezembro", "dez"}},
 	},
 }
@@ -171,6 +178,35 @@ func fold(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// PageRE matches a page reference in any supported language, such as
+// "página 6", "page 6", "pág. 6" or "p. 6". Use it on text without accents.
+var PageRE = func() *regexp.Regexp {
+	seen := map[string]bool{}
+	var words []string
+	for _, l := range All {
+		for _, w := range l.PageWords {
+			if !seen[w] {
+				seen[w] = true
+				words = append(words, regexp.QuoteMeta(w))
+			}
+		}
+	}
+	return regexp.MustCompile(`(?i)\b(?:` + strings.Join(words, "|") + `)\.?\s*(\d{1,4})\b`)
+}()
+
+// Pages returns the page numbers that a text refers to, such as 6 in
+// "las fotos de la página 6".
+func Pages(text string) []int {
+	var out []int
+	for _, m := range PageRE.FindAllStringSubmatch(fold(text), -1) {
+		var n int
+		if _, err := fmt.Sscan(m[1], &n); err == nil && n > 0 && !slices.Contains(out, n) {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // MonthNumbers maps every month name and short form of every language,

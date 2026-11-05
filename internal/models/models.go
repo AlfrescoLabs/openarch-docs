@@ -141,7 +141,14 @@ func ImagePart(mediaType string, data []byte) Part {
 type ChatOptions struct {
 	Temperature float64
 	MaxTokens   int
+	// Think lets models that think before they answer, such as GLM 4.7
+	// Flash, do so. When false the chat template is asked to skip it: the
+	// thinking can use every token before the answer starts.
+	Think bool
 }
+
+// ErrNoAnswer means the model used all its tokens before it wrote an answer.
+var ErrNoAnswer = errors.New("the model used all its tokens before it wrote an answer")
 
 // Unload asks Docker Model Runner to free the memory of the models. Errors
 // are ignored: a model that is not loaded is fine.
@@ -157,9 +164,15 @@ func (c *Client) Chat(ctx context.Context, model string, messages []Message, opt
 	if opts.MaxTokens > 0 {
 		body["max_tokens"] = opts.MaxTokens
 	}
+	if !opts.Think {
+		// llama.cpp passes these to the chat template; templates without the
+		// variable ignore it.
+		body["chat_template_kwargs"] = map[string]any{"enable_thinking": false}
+	}
 	var resp struct {
 		Choices []struct {
-			Message struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
@@ -170,7 +183,12 @@ func (c *Client) Chat(ctx context.Context, model string, messages []Message, opt
 	if len(resp.Choices) == 0 {
 		return "", fmt.Errorf("model %s: no answer", model)
 	}
-	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
+	choice := resp.Choices[0]
+	content := strings.TrimSpace(choice.Message.Content)
+	if content == "" && choice.FinishReason == "length" {
+		return "", fmt.Errorf("model %s: %w", model, ErrNoAnswer)
+	}
+	return content, nil
 }
 
 func (c *Client) post(ctx context.Context, path, model string, body, out any) error {
