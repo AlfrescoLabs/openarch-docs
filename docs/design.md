@@ -10,7 +10,8 @@
 4. **Originals never change.** Every original has a SHA-256 checksum. Every derived file records its source file and, when it applies, the attachment name and the message headers.
 5. **Only Docker on the host.** Text extraction, page rendering and OCR (Spanish and English) run in the plugin tools image with no network.
 6. **Same output contract as openarch.** Every command supports `--output json`. Results go to stdout, logs to stderr. In JSON mode errors also go to stdout. Exit codes match openarch.
-7. **Answers cite sources.** Every fact in an answer points to a file and a page. Case facts, reference texts (law) and notes (interpretations) are cited apart.
+7. **Languages.** English, Spanish, French and Portuguese. The words that mail clients and chat exports write (forward markers, quoted headers, attachment lines) and the OCR codes live in one table, `internal/lang`. Parsers match every language at once, so one case folder can mix them. A new language is one new entry.
+8. **Answers cite sources.** Every fact in an answer points to a file and a page. Case facts, reference texts (law) and notes (interpretations) are cited apart.
 
 ## Plugin contract
 
@@ -52,7 +53,7 @@ Derived files of an email: `message.txt` (headers and body text), `message.html`
 
 - `message`: the headers of the email that holds the file.
 - `chain`: the emails around it, outermost first, for attached emails.
-- `forwarded`: the forwarded or quoted messages found in the body text (marker lines, or `From:`/`De:` blocks, in English and Spanish).
+- `forwarded`: the forwarded or quoted messages found in the body text (marker lines such as "Forwarded message" or "Mensagem encaminhada", or a `From:`/`De :` block), in every supported language.
 - `part` and `attachment`: the MIME part number and the file name the sender gave.
 
-Derived files of a WhatsApp export: `chat.txt`, `messages.json` and `media/`. Each media file records who sent it and when. The date order (day or month first) comes from the export; when no date shows it, `messages.json` keeps the time as written and has no ISO time.
+Derived files of a WhatsApp export (iOS or Android, in any supported language): `chat.txt`, `messages.json` and `media/`. Each media file records who sent it and when. The date order (day or month first) comes from the export; when no date shows it, `messages.json` keeps the time as written and has no ISO time.

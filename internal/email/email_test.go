@@ -91,3 +91,26 @@ func TestForwarded(t *testing.T) {
 		t.Errorf("false positive: %+v", got)
 	}
 }
+
+func TestForwardedLanguages(t *testing.T) {
+	tests := []struct{ name, text, from, date, subject string }{
+		{"french gmail", "---------- Message transféré ---------\nDe : Marie <marie@example.fr>\nDate: mer. 29 oct. 2026 à 18:00\nObjet : Plan\nÀ : Luc <luc@example.fr>\n",
+			"Marie <marie@example.fr>", "mer. 29 oct. 2026 à 18:00", "Plan"},
+		{"french outlook", "De : Marie <marie@example.fr>\nEnvoyé : mercredi 29 octobre 2026 18:00\nÀ : Luc\nObjet : RE: Plan\n",
+			"Marie <marie@example.fr>", "mercredi 29 octobre 2026 18:00", "RE: Plan"},
+		{"portuguese gmail", "---------- Mensagem encaminhada ---------\nDe: João <joao@example.pt>\nData: qua., 29 de out. de 2026 às 18:00\nAssunto: Planta\nPara: Rui <rui@example.pt>\n",
+			"João <joao@example.pt>", "qua., 29 de out. de 2026 às 18:00", "Planta"},
+		{"portuguese apple mail", "Início da mensagem encaminhada:\n\nDe: João <joao@example.pt>\nAssunto: Planta\nData: 29 de outubro de 2026 18:00\n",
+			"João <joao@example.pt>", "29 de outubro de 2026 18:00", "Planta"},
+		{"english apple mail", "Begin forwarded message:\n\nFrom: Ann <ann@example.com>\nSubject: Plan\nDate: October 29, 2026 at 6:00 PM\n",
+			"Ann <ann@example.com>", "October 29, 2026 at 6:00 PM", "Plan"},
+		{"spanish gmail", "---------- Mensaje reenviado ---------\nDe: Ana <ana@example.es>\nFecha: mié, 29 oct 2026\nAsunto: Plano\n",
+			"Ana <ana@example.es>", "mié, 29 oct 2026", "Plano"},
+	}
+	for _, tt := range tests {
+		got := Forwarded(tt.text)
+		if len(got) != 1 || got[0].From != tt.from || got[0].Date != tt.date || got[0].Subject != tt.subject {
+			t.Errorf("%s: got %+v", tt.name, got)
+		}
+	}
+}

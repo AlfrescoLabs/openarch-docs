@@ -7,6 +7,7 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/AlfrescoLabs/openarch-docs/internal/casefile"
+	"github.com/AlfrescoLabs/openarch-docs/internal/lang"
 )
 
 // blockTags end a line in the text form of HTML.
@@ -78,21 +79,25 @@ func cleanText(s string) string {
 	return strings.TrimSpace(strings.Join(out, "\n"))
 }
 
-var forwardMarker = regexp.MustCompile(`(?i)^[-_ ]*(forwarded message|mensaje reenviado|original message|mensaje original)[-_ ]*$`)
+// forwardMarker matches a line that starts a forwarded or quoted message,
+// such as "---------- Forwarded message ---------" or "Begin forwarded message:".
+var forwardMarker = regexp.MustCompile(`(?i)^[-_ ]*(` + alternatives(lang.ForwardMarkers()) + `)[-_ ]*:?$`)
 
-// headerKeys maps the header names that mail clients write in quoted
-// messages, in English and Spanish, to MessageInfo fields.
-var headerKeys = map[string]string{
-	"from": "from", "de": "from",
-	"date": "date", "sent": "date", "fecha": "date", "enviado": "date", "enviado el": "date",
-	"subject": "subject", "asunto": "subject",
-	"to": "to", "para": "to",
-	"cc": "cc",
+// headerKeys maps the header names that mail clients write in quoted messages to MessageInfo fields.
+var headerKeys = lang.Headers()
+
+// alternatives joins words into a regular expression alternation.
+func alternatives(words []string) string {
+	q := make([]string, len(words))
+	for i, w := range words {
+		q[i] = regexp.QuoteMeta(w)
+	}
+	return strings.Join(q, "|")
 }
 
 // Forwarded finds the forwarded or quoted messages in a body text: a marker
-// line such as "---------- Forwarded message ---------" followed by header
-// lines, or a "From:"/"De:" line followed by a subject line.
+// line followed by header lines, or a "From:" line (in any supported
+// language) followed by a date or subject line.
 func Forwarded(text string) []casefile.MessageInfo {
 	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
 	var found []casefile.MessageInfo

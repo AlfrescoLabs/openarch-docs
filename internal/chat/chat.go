@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/AlfrescoLabs/openarch-docs/internal/lang"
 )
 
 // Message is one chat message.
@@ -22,20 +24,32 @@ type Message struct {
 }
 
 var (
-	// iOS: [24/8/26, 18:05:36] Name: text
-	iosLine = regexp.MustCompile(`^\[(\d{1,2})/(\d{1,2})/(\d{2,4}),? (\d{1,2}):(\d{2})(?::(\d{2}))?\s?([AaPp]\.?\s?[Mm]\.?)?\] ([^:]+): (.*)$`)
+	// iOS: [24/8/26, 18:05:36] Name: text. Some languages put a word between
+	// the date and the time, such as "24/08/2026 à 18:05".
+	iosLine = regexp.MustCompile(`^\[(\d{1,2})/(\d{1,2})/(\d{2,4}),? (?:\pL{1,4} )?(\d{1,2}):(\d{2})(?::(\d{2}))?\s?([AaPp]\.?\s?[Mm]\.?)?\] ([^:]+): (.*)$`)
 	// Android: 24/8/26, 18:05 - Name: text
-	androidLine = regexp.MustCompile(`^(\d{1,2})/(\d{1,2})/(\d{2,4}),? (\d{1,2}):(\d{2})(?::(\d{2}))?\s?([AaPp]\.?\s?[Mm]\.?)?\s[-\x{2013}] ([^:]+): (.*)$`)
-	// <attached: 00000023-PHOTO-2026-09-10-18-10-04.jpg> and the Spanish form <adjunto: ...>
-	iosAttachment = regexp.MustCompile(`^<(?:attached|adjunto): (.+)>$`)
-	// IMG-20260910-WA0001.jpg (file attached) and the Spanish form (archivo adjunto)
-	androidAttachment = regexp.MustCompile(`^(.+\.[A-Za-z0-9]{2,5}) \((?:file attached|archivo adjunto)\)`)
+	androidLine = regexp.MustCompile(`^(\d{1,2})/(\d{1,2})/(\d{2,4}),? (?:\pL{1,4} )?(\d{1,2}):(\d{2})(?::(\d{2}))?\s?([AaPp]\.?\s?[Mm]\.?)?\s[-\x{2013}] ([^:]+): (.*)$`)
+	// iOS: <attached: 00000023-PHOTO-2026-09-10-18-10-04.jpg>, with the word in any supported language.
+	iosAttachment = regexp.MustCompile(`(?i)^<(?:` + alternatives(lang.ChatAttached()) + `)\s?: (.+)>$`)
+	// Android: IMG-20260910-WA0001.jpg (file attached), with the words in any supported language.
+	androidAttachment = regexp.MustCompile(`(?i)^(.+\.[A-Za-z0-9]{2,5}) \((?:` + alternatives(lang.ChatFileAttached()) + `)\)`)
 )
+
+// alternatives joins words into a regular expression alternation.
+func alternatives(words []string) string {
+	q := make([]string, len(words))
+	for i, w := range words {
+		q[i] = regexp.QuoteMeta(w)
+	}
+	return strings.Join(q, "|")
+}
 
 // IsChatFile reports whether a file name in a zip is a WhatsApp chat text file.
 func IsChatFile(name string) bool {
 	base := path.Base(name)
-	return base == "_chat.txt" || (strings.HasPrefix(base, "WhatsApp Chat") && strings.HasSuffix(base, ".txt"))
+	// iOS names it _chat.txt. Android names it in the phone language:
+	// "WhatsApp Chat with X.txt", "Chat de WhatsApp con X.txt", "Discussion WhatsApp avec X.txt".
+	return base == "_chat.txt" || (strings.Contains(strings.ToLower(base), "whatsapp") && strings.HasSuffix(strings.ToLower(base), ".txt"))
 }
 
 // Parse reads the chat text. Lines that do not start a message continue the previous one.

@@ -53,3 +53,24 @@ func TestIsChatFile(t *testing.T) {
 		}
 	}
 }
+
+func TestParseLanguages(t *testing.T) {
+	tests := []struct{ line, sender, attachment, iso string }{
+		{"[24/08/2026 18:05:36] Marie: <pièce jointe : 00000001-PHOTO-2026-08-24-18-05-36.jpg>", "Marie", "00000001-PHOTO-2026-08-24-18-05-36.jpg", "2026-08-24T18:05:36"},
+		{"24/08/2026 à 18:05 - Marie: IMG-20260824-WA0001.jpg (fichier joint)", "Marie", "IMG-20260824-WA0001.jpg", "2026-08-24T18:05:00"},
+		{"[24/08/26, 18:05:36] João: <anexado: 00000002-PHOTO-2026-08-24-18-05-36.jpg>", "João", "00000002-PHOTO-2026-08-24-18-05-36.jpg", "2026-08-24T18:05:36"},
+		{"24/08/2026 18:05 - João: IMG-20260824-WA0002.jpg (arquivo anexado)", "João", "IMG-20260824-WA0002.jpg", "2026-08-24T18:05:00"},
+		{"24/8/26, 18:05 - Ana: IMG-20260824-WA0003.jpg (archivo adjunto)", "Ana", "IMG-20260824-WA0003.jpg", "2026-08-24T18:05:00"},
+	}
+	for _, tt := range tests {
+		got := Parse(tt.line + "\n")
+		if len(got) != 1 || got[0].Sender != tt.sender || got[0].Attachment != tt.attachment || got[0].ISO != tt.iso {
+			t.Errorf("%s: got %+v", tt.line, got)
+		}
+	}
+	for _, name := range []string{"Chat de WhatsApp con Ana.txt", "Discussion WhatsApp avec Marie.txt", "Conversa do WhatsApp com João.txt"} {
+		if !IsChatFile(name) {
+			t.Errorf("IsChatFile(%q) = false", name)
+		}
+	}
+}
