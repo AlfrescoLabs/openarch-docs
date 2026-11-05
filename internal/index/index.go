@@ -382,6 +382,8 @@ type SearchOptions struct {
 
 // Hit is one search result.
 type Hit struct {
+	// ID is the chunk id; chunks of one text have consecutive ids.
+	ID     int64   `json:"id"`
 	Rank   int     `json:"rank"`
 	Score  float64 `json:"score"`
 	Cite   string  `json:"cite"`
@@ -494,10 +496,30 @@ func (x *Index) Search(ctx context.Context, opts SearchOptions) ([]Hit, error) {
 }
 
 func (x *Index) hit(ctx context.Context, id int64) (Hit, error) {
-	var h Hit
+	h := Hit{ID: id}
 	err := x.db.QueryRowContext(ctx, `SELECT cite, path, source, origin, page, kind, role, method, date, sender, text FROM chunks WHERE id = ?`, id).
 		Scan(&h.Cite, &h.Path, &h.Source, &h.Origin, &h.Page, &h.Kind, &h.Role, &h.Method, &h.Date, &h.Sender, &h.Text)
 	return h, err
+}
+
+// Neighbors returns the chunks just before and after a chunk in the same
+// message: same file and same citation.
+func (x *Index) Neighbors(ctx context.Context, h Hit) ([]Hit, error) {
+	var out []Hit
+	for _, id := range []int64{h.ID - 1, h.ID + 1} {
+		n, err := x.hit(ctx, id)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if n.Path == h.Path && n.Cite == h.Cite {
+			n.Matched = []string{"neighbor"}
+			out = append(out, n)
+		}
+	}
+	return out, nil
 }
 
 // searchText returns chunk ids by BM25 rank. Each word of the query is a term,

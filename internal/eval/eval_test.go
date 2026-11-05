@@ -33,3 +33,17 @@ func TestScore(t *testing.T) {
 		}
 	}
 }
+
+func TestJudgeScore(t *testing.T) {
+	for reply, want := range map[string]int{
+		`{"facts":[{"fact":"a","stated":true},{"fact":"b","stated":true}]}`:                                     2,
+		"Here:\n```json\n{\"facts\":[{\"fact\":\"a\",\"stated\":true},{\"fact\":\"b\",\"stated\":false}]}\n```": 1,
+		`{"facts":[{"fact":"a","stated":true},{"fact":"b","stated":true,"contradicted":true}]}`:                 0,
+		`{"facts":[{"fact":"a","stated":false},{"fact":"b","stated":false},{"fact":"c","stated":true}]}`:        0,
+		"2": -1,
+	} {
+		if got, _ := judgeScore(reply); got != want {
+			t.Errorf("judgeScore(%q) = %d, want %d", reply, got, want)
+		}
+	}
+}

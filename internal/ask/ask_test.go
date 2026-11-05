@@ -15,12 +15,24 @@ import (
 
 // fakeChat returns its answers in order, and repeats the last one.
 type fakeChat struct {
-	answers  []string
-	calls    int
-	messages []models.Message
+	answers          []string
+	calls            int
+	expands, reranks int
+	messages         []models.Message
 }
 
 func (f *fakeChat) Chat(_ context.Context, _ string, messages []models.Message, _ models.ChatOptions) (string, error) {
+	// The query expansion and rerank steps get their own fixed replies.
+	if text, ok := messages[0].Content.(string); ok && len(messages) == 1 {
+		switch {
+		case strings.Contains(text, "Write 3 search queries"):
+			f.expands++
+			return "centralizacion sotano\n- cuarto de contadores\n", nil
+		case strings.Contains(text, "Which passages hold facts"):
+			f.reranks++
+			return "2, 1", nil
+		}
+	}
 	f.messages = messages
 	a := f.answers[min(f.calls, len(f.answers)-1)]
 	f.calls++
@@ -94,7 +106,7 @@ func TestRun(t *testing.T) {
 func TestRunNoHits(t *testing.T) {
 	x := newIndex(t)
 	chat := &fakeChat{answers: []string{"x"}}
-	res, err := Run(context.Background(), Options{Question: "zzzz", Index: x, Chat: chat, ChatModel: "m"})
+	res, err := Run(context.Background(), Options{Question: "zzzz", Index: x, Chat: chat, ChatModel: "m", NoExpand: true})
 	if err != nil || len(res.Sources) != 0 || chat.messages != nil || !strings.Contains(res.Answer, "no text") {
 		t.Errorf("no hits = %+v, %v", res, err)
 	}
@@ -153,6 +165,32 @@ func TestCheckCitations(t *testing.T) {
 	}
 	if got := checkCitations("Alarroya dice que no aportaron las fotos durante las visitas [1].", sources); len(got) != 0 {
 		t.Errorf("right citation flagged: %+v", got)
+	}
+}
+
+func TestRetrieveSteps(t *testing.T) {
+	x := newIndex(t)
+	chat := &fakeChat{answers: []string{"Está en el sótano -2 [1]."}}
+	if _, err := Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m"}); err != nil {
+		t.Fatal(err)
+	}
+	// Few candidates: no rerank is needed.
+	if chat.expands != 1 || chat.reranks != 0 {
+		t.Errorf("expands %d, reranks %d", chat.expands, chat.reranks)
+	}
+	chat = &fakeChat{answers: []string{"x [1]."}}
+	if _, err := Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m", Limit: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if chat.reranks != 1 {
+		t.Errorf("reranks %d with more candidates than the limit", chat.reranks)
+	}
+	chat = &fakeChat{answers: []string{"x [1]."}}
+	if _, err := Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m", Limit: 1, NoExpand: true, NoRerank: true}); err != nil {
+		t.Fatal(err)
+	}
+	if chat.expands != 0 || chat.reranks != 0 {
+		t.Errorf("steps run when turned off: %d, %d", chat.expands, chat.reranks)
 	}
 }
 

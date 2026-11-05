@@ -52,17 +52,19 @@ func (r askResult) WriteText(w io.Writer) error {
 
 func newAskCmd(app *App) *cobra.Command {
 	var (
-		limit   int
-		noNotes bool
-		think   bool
+		limit                                int
+		noNotes, noExpand, noRerank, noNeigh bool
+		think                                bool
 	)
 	cmd := &cobra.Command{
 		Use:   "ask <question>",
 		Short: "Answer a question about the case folder, with sources",
 		Long: `Answer a question with the local chat model of the profile.
 
-ask searches the index (case documents and references, and up to 3 notes,
-marked as interpretations; --no-notes leaves them out), adds the newest
+ask searches the index with the question and with 3 more queries that the
+model writes in other words, lets the model pick the passages that help
+(rerank), adds the pieces around each one, and adds up to 3 notes,
+marked as interpretations (--no-notes leaves them out). It adds the newest
 emails when the question asks for the last one, gives the model the best
 pieces as numbered sources, and asks
 it to answer in the language of the question, citing a source for every fact
@@ -96,7 +98,7 @@ Run index first.`,
 			defer func() { _ = x.Close() }()
 			client := app.modelClient()
 			res, err := ask.Run(cmd.Context(), ask.Options{
-				Question: strings.Join(args, " "), Limit: limit, NoNotes: noNotes, Think: think, Index: x,
+				Question: strings.Join(args, " "), Limit: limit, NoNotes: noNotes, Think: think, NoExpand: noExpand, NoRerank: noRerank, NoNeighbors: noNeigh, Index: x,
 				Embedder: client, EmbedModel: p.Embed, Chat: client, ChatModel: p.Chat,
 			})
 			if errors.Is(err, models.ErrNoAnswer) {
@@ -114,6 +116,9 @@ Run index first.`,
 	}
 	cmd.Flags().IntVar(&limit, "limit", 12, "number of sources the model reads")
 	cmd.Flags().BoolVar(&noNotes, "no-notes", false, "leave the notes out of the sources")
+	cmd.Flags().BoolVar(&noExpand, "no-expand", false, "search with the question only, without the extra queries the model writes")
+	cmd.Flags().BoolVar(&noRerank, "no-rerank", false, "keep the search order, without the model picking the useful passages")
+	cmd.Flags().BoolVar(&noNeigh, "no-neighbors", false, "leave out the pieces around each hit")
 	cmd.Flags().BoolVar(&think, "think", false, "let models that think before they answer (GLM 4.7 Flash) do so: slower")
 	return cmd
 }

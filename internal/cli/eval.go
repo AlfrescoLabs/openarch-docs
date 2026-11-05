@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/AlfrescoLabs/openarch-docs/internal/ask"
 	"github.com/AlfrescoLabs/openarch-docs/internal/eval"
 	"github.com/AlfrescoLabs/openarch-docs/internal/index"
+	"github.com/AlfrescoLabs/openarch-docs/internal/models"
 	"github.com/AlfrescoLabs/openarch-docs/internal/output"
 )
 
@@ -18,7 +20,11 @@ type evalResult struct{ *eval.Report }
 
 func (r evalResult) WriteText(w io.Writer) error {
 	for i, res := range r.Results {
-		if _, err := fmt.Fprintf(w, "%2d %-7s %s\n", i+1, res.Status, res.Text); err != nil {
+		judge := " "
+		if res.Judge >= 0 {
+			judge = fmt.Sprint(res.Judge)
+		}
+		if _, err := fmt.Fprintf(w, "%2d %-7s %s %s\n", i+1, res.Status, judge, res.Text); err != nil {
 			return err
 		}
 		detail := ""
@@ -38,12 +44,19 @@ func (r evalResult) WriteText(w io.Writer) error {
 			}
 		}
 	}
-	_, err := fmt.Fprintf(w, "%d pass, %d partial, %d fail, %d skipped. Model: %s\n", r.Pass, r.Partial, r.Fail, r.Skip, r.Model)
+	line := fmt.Sprintf("%d pass, %d partial, %d fail, %d skipped. Model: %s.", r.Pass, r.Partial, r.Fail, r.Skip, r.Model)
+	if r.JudgeMax > 0 {
+		line += fmt.Sprintf(" Judge: %d of %d (%d%%).", r.JudgeScore, r.JudgeMax, 100*r.JudgeScore/r.JudgeMax)
+	}
+	_, err := fmt.Fprintln(w, line)
 	return err
 }
 
 func newEvalCmd(app *App) *cobra.Command {
 	var limit int
+	var noJudge, noExpand, noRerank, noNeigh, noNotes, judgeThink bool
+	var rejudge string
+	var judgeModel string
 	cmd := &cobra.Command{
 		Use:   "eval <questions-file>",
 		Short: "Ask a set of questions and check the answers",
@@ -58,10 +71,13 @@ The file has one block per question:
   E: instalador | Rubén; correo     (each group, split by ;, needs one word)
   N: cliente                          (words that must not appear)
   S: needs the web                    (skip the question, with the reason)
+  A: El instalador, por correo.       (a correct answer, for the judge model)
 
 Words are compared in lower case, without accents. An answer passes with
 every group, is partial with at least half, and fails with less, or with a
-forbidden word. Keep a question file of a private case out of any repository.`,
+forbidden word. With A: lines, the chat model of the profile also judges each
+answer against the reference (--judge-model, the chat model of the large
+profile by default): 2 right, 1 partly right, 0 wrong. Keep a question file of a private case out of any repository.`,
 		Example: `  openarch docs eval ~/cases/garage-questions.txt
   openarch docs eval questions.txt --profile small --output json > report.json`,
 		Args: cobra.ExactArgs(1),
@@ -86,15 +102,33 @@ forbidden word. Keep a question file of a private case out of any repository.`,
 			if err != nil {
 				return err
 			}
+			client := app.modelClient()
+			jopts := eval.Options{Judge: judge(client, noJudge), JudgeModel: judgeModel, JudgeThink: judgeThink}
+			if rejudge != "" {
+				data, err := os.ReadFile(rejudge)
+				if err != nil {
+					return output.Usage(err.Error(), "")
+				}
+				var old eval.Report
+				if err := json.Unmarshal(data, &old); err != nil {
+					return output.Usage(rejudge+": "+err.Error(), "Give a report written by eval --output json.")
+				}
+				rep, err := eval.Rejudge(cmd.Context(), &old, qs, jopts)
+				if err != nil {
+					return modelError(err, judgeModel)
+				}
+				return app.Printer.Print(evalResult{rep})
+			}
 			x, err := index.Open(cmd.Context(), root)
 			if err != nil {
 				return err
 			}
 			defer func() { _ = x.Close() }()
-			client := app.modelClient()
 			rep, err := eval.Run(cmd.Context(), qs, eval.Options{
-				Ask:      ask.Options{Limit: limit, Index: x, Embedder: client, EmbedModel: p.Embed, Chat: client, ChatModel: p.Chat},
+				Ask: ask.Options{Limit: limit, Index: x, Embedder: client, EmbedModel: p.Embed, Chat: client, ChatModel: p.Chat,
+					NoExpand: noExpand, NoRerank: noRerank, NoNeighbors: noNeigh, NoNotes: noNotes},
 				Progress: app.Streams.Err,
+				Judge:    jopts.Judge, JudgeModel: judgeModel, JudgeThink: judgeThink,
 			})
 			if err != nil {
 				return modelError(err, p.Chat)
@@ -102,6 +136,23 @@ forbidden word. Keep a question file of a private case out of any repository.`,
 			return app.Printer.Print(evalResult{rep})
 		},
 	}
+	cmd.Flags().BoolVar(&noJudge, "no-judge", false, "do not judge the answers")
+	cmd.Flags().BoolVar(&judgeThink, "judge-think", false, "let the judge think before it scores: slower, steadier")
+	cmd.Flags().StringVar(&rejudge, "rejudge", "", "score the answers of this JSON report again, without asking again")
+	cmd.Flags().BoolVar(&noExpand, "no-expand", false, "ask without query expansion (to measure it)")
+	cmd.Flags().BoolVar(&noRerank, "no-rerank", false, "ask without rerank (to measure it)")
+	cmd.Flags().BoolVar(&noNeigh, "no-neighbors", false, "ask without neighbor pieces (to measure them)")
+	cmd.Flags().BoolVar(&noNotes, "no-notes", false, "ask without notes (to measure them)")
+	large, _ := models.GetProfile("large")
+	cmd.Flags().StringVar(&judgeModel, "judge-model", large.Chat, "model that judges the answers; the same for every profile, so runs compare")
 	cmd.Flags().IntVar(&limit, "limit", 12, "number of sources the model reads for each question")
 	return cmd
+}
+
+// judge returns the judge, or nil when it is turned off.
+func judge(c ask.Chatter, off bool) ask.Chatter {
+	if off {
+		return nil
+	}
+	return c
 }

@@ -4,6 +4,7 @@
 package ask
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"regexp"
@@ -34,12 +35,18 @@ type Options struct {
 	// notes join, marked as interpretations: they hold earlier work.
 	NoNotes bool
 	// Think lets the model think before it answers: slower, sometimes better.
-	Think      bool
-	Index      *index.Index
-	Embedder   index.Embedder
-	EmbedModel string
-	Chat       Chatter
-	ChatModel  string
+	Think bool
+	// NoExpand skips the extra search queries the model writes.
+	NoExpand bool
+	// NoRerank skips the step where the model picks the useful candidates.
+	NoRerank bool
+	// NoNeighbors skips the chunks around each hit.
+	NoNeighbors bool
+	Index       *index.Index
+	Embedder    index.Embedder
+	EmbedModel  string
+	Chat        Chatter
+	ChatModel   string
 }
 
 // Source is one numbered source the model read.
@@ -74,6 +81,128 @@ type Result struct {
 // retryPrompt asks again when the answer has no sentences.
 const retryPrompt = "Your answer has no sentences. Write 1 to 5 full sentences in the language of the question, each followed by its source numbers. If the sources do not hold the answer, write that in one sentence."
 
+// candidates is the number of chunks that search gives to the rerank step.
+const candidates = 30
+
+// expandPrompt asks for more search queries. %s is the language, %s the question.
+const expandPrompt = `Write 3 search queries to find, in a case file of emails, chat messages, PDFs and photos, the passages that answer the question below.
+Use other words than the question: the names, places, dates, document names and the words that such a passage would contain.
+Write them in %s. Write one query per line, and nothing else.
+
+Question: %s`
+
+// rerankPrompt asks the model to pick the useful passages.
+const rerankPrompt = `Below are numbered passages from a case file, and a question.
+Which passages hold facts that help answer the question? Think about who wrote each passage and when.
+Reply with their numbers only, the most useful first, at most %d, separated by commas. Reply "none" when no passage helps.
+
+%s
+Question: %s`
+
+// retrieve finds the chunks for a question: search with the question and,
+// unless turned off, with queries the model writes; then the model picks the
+// useful candidates; then each pick brings its neighbors.
+func retrieve(ctx context.Context, opts Options) ([]index.Hit, error) {
+	queries := []string{opts.Question}
+	language := "the language of the question"
+	if l, ok := lang.Detect(opts.Question); ok {
+		language = l.Name
+	}
+	small := models.ChatOptions{Temperature: 0, Seed: 42, MaxTokens: 300}
+	if !opts.NoExpand {
+		reply, err := opts.Chat.Chat(ctx, opts.ChatModel, []models.Message{{Role: "user", Content: fmt.Sprintf(expandPrompt, language, opts.Question)}}, small)
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range strings.Split(reply, "\n") {
+			line = strings.Trim(strings.TrimSpace(line), "-*0123456789.)\"' ")
+			if len([]rune(line)) >= 3 && len(queries) < 4 {
+				queries = append(queries, line)
+			}
+		}
+	}
+	// Reciprocal rank fusion over the queries; the question itself weighs most.
+	scores := map[int64]float64{}
+	byID := map[int64]index.Hit{}
+	for i, q := range queries {
+		hits, err := opts.Index.Search(ctx, index.SearchOptions{
+			Query: q, Limit: candidates, Roles: []string{casefile.RoleCase, casefile.RoleReference}, Embedder: opts.Embedder, Model: opts.EmbedModel,
+		})
+		if err != nil {
+			return nil, err
+		}
+		weight := 1.0
+		if i > 0 {
+			weight = 0.6
+		}
+		for rank, h := range hits {
+			scores[h.ID] += weight / float64(60+rank+1)
+			byID[h.ID] = h
+		}
+	}
+	cands := make([]index.Hit, 0, len(byID))
+	for _, h := range byID {
+		cands = append(cands, h)
+	}
+	slices.SortFunc(cands, func(a, b index.Hit) int {
+		if c := cmp.Compare(scores[b.ID], scores[a.ID]); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+	if len(cands) > candidates {
+		cands = cands[:candidates]
+	}
+	picked := cands
+	if !opts.NoRerank && len(cands) > opts.Limit {
+		var b strings.Builder
+		for i, h := range cands {
+			text := strings.Join(strings.Fields(h.Text), " ")
+			if r := []rune(text); len(r) > 500 {
+				text = string(r[:500]) + " ..."
+			}
+			fmt.Fprintf(&b, "[%d] %s", i+1, h.Cite)
+			if h.Sender != "" {
+				fmt.Fprintf(&b, " (written by %s)", h.Sender)
+			}
+			fmt.Fprintf(&b, "\n%s\n\n", text)
+		}
+		reply, err := opts.Chat.Chat(ctx, opts.ChatModel, []models.Message{{Role: "user", Content: fmt.Sprintf(rerankPrompt, opts.Limit, b.String(), opts.Question)}}, small)
+		if err != nil {
+			return nil, err
+		}
+		// A reply without numbers ("none", or text) keeps the search order.
+		var chosen []index.Hit
+		seen := map[int]bool{}
+		for _, part := range strings.FieldsFunc(reply, func(r rune) bool { return r < '0' || r > '9' }) {
+			n, err := strconv.Atoi(part)
+			if err != nil || n < 1 || n > len(cands) || seen[n] {
+				continue
+			}
+			seen[n] = true
+			chosen = append(chosen, cands[n-1])
+		}
+		if len(chosen) > 0 {
+			picked = chosen
+		}
+	}
+	if len(picked) > opts.Limit {
+		picked = picked[:opts.Limit]
+	}
+	if opts.NoNeighbors {
+		return picked, nil
+	}
+	out := slices.Clone(picked)
+	for _, h := range picked {
+		n, err := opts.Index.Neighbors(ctx, h)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n...)
+	}
+	return out, nil
+}
+
 // maxNotes is the number of notes that join the sources.
 const maxNotes = 3
 
@@ -99,9 +228,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Limit <= 0 {
 		opts.Limit = 12
 	}
-	hits, err := opts.Index.Search(ctx, index.SearchOptions{
-		Query: opts.Question, Limit: opts.Limit, Roles: []string{casefile.RoleCase, casefile.RoleReference}, Embedder: opts.Embedder, Model: opts.EmbedModel,
-	})
+	hits, err := retrieve(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -129,19 +256,32 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	}
 	// Pieces of the same file become one source, in rank order.
 	type group struct {
-		hit   index.Hit
-		texts []string
+		hit    index.Hit
+		chunks []index.Hit
+		texts  []string
 	}
 	var groups []*group
 	byPath := map[string]*group{}
+	seenChunk := map[int64]bool{}
 	for _, h := range hits {
-		if g, ok := byPath[h.Path]; ok {
-			g.texts = append(g.texts, strings.TrimSpace(h.Text))
+		if seenChunk[h.ID] {
 			continue
 		}
-		g := &group{hit: h, texts: []string{strings.TrimSpace(h.Text)}}
-		byPath[h.Path] = g
-		groups = append(groups, g)
+		seenChunk[h.ID] = true
+		g, ok := byPath[h.Path]
+		if !ok {
+			g = &group{hit: h}
+			byPath[h.Path] = g
+			groups = append(groups, g)
+		}
+		g.chunks = append(g.chunks, h)
+	}
+	// The pieces of a file are read in file order.
+	for _, g := range groups {
+		slices.SortFunc(g.chunks, func(a, b index.Hit) int { return cmp.Compare(a.ID, b.ID) })
+		for _, c := range g.chunks {
+			g.texts = append(g.texts, strings.TrimSpace(c.Text))
+		}
 	}
 	var b strings.Builder
 	var sourceTexts []string
