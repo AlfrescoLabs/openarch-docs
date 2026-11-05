@@ -163,6 +163,17 @@ func TestParsers(t *testing.T) {
 	if got := splitPages("a\fb\f", 3); !slices.Equal(got, []string{"a", "b", ""}) {
 		t.Errorf("splitPages = %q", got)
 	}
+	// A4 page; a 1700 x 2200 scan at 200 ppi covers the page, a 300 x 100
+	// logo at 300 ppi does not, and a mask never counts.
+	list := "page   num  type   width height color comp bpc  enc interp  object ID x-ppi y-ppi size ratio\n" +
+		"--------------------------------------------------------------------------------------------\n" +
+		"   1     0 image    1700  2200  rgb     3   8  jpeg   no        10  0   200   200  276K 2.5%\n" +
+		"   1     1 smask    1700  2200  gray    1   8  image  no        10  0   200   200  10K 0.3%\n" +
+		"   2     2 image     300   100  rgb     3   8  jpeg   no        12  0   300   300  10K 1%\n"
+	area := pageArea("Pages: 2\nPage size:      595.276 x 841.89 pts (A4)\n")
+	if got := largeImages(list, area); got[1] != 1 || got[2] != 0 {
+		t.Errorf("largeImages = %v", got)
+	}
 	if n := letters("  1, a. ñ!"); n != 3 {
 		t.Errorf("letters = %d", n)
 	}

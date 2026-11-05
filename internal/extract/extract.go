@@ -35,9 +35,9 @@ const (
 	MethodOCR       = "ocr"
 )
 
-// minImagePixels is the size from which an image in a PDF counts as a photo
-// or a plan, not a logo or a line: about 200 x 200 pixels.
-const minImagePixels = 40000
+// minImageShare is the part of the page from which an image counts as a
+// photo or a plan, not a logo or a letterhead.
+const minImageShare = 0.10
 
 // Options configure an extract run.
 type Options struct {
@@ -230,7 +230,7 @@ func extractPDF(ctx context.Context, opts Options, m *casefile.Manifest, t targe
 	if err != nil {
 		return err
 	}
-	images := largeImages(string(list))
+	images := largeImages(string(list), pageArea(string(info)))
 
 	// Second run: an image of each page, and OCR for the pages with little text.
 	var cmds []tools.Cmd
@@ -337,8 +337,33 @@ func splitPages(text string, pages int) []string {
 	return out
 }
 
-// largeImages counts the large images per page in 'pdfimages -list' output.
-func largeImages(list string) map[int]int {
+// pageArea reads "Page size: 595.28 x 841.89 pts" from pdfinfo output and
+// returns the area in square points. It is 0 when pdfinfo does not show it.
+func pageArea(info string) float64 {
+	for _, line := range strings.Split(info, "\n") {
+		v, ok := strings.CutPrefix(line, "Page size:")
+		if !ok {
+			continue
+		}
+		f := strings.Fields(v)
+		if len(f) < 3 || f[1] != "x" {
+			return 0
+		}
+		w, err1 := strconv.ParseFloat(f[0], 64)
+		h, err2 := strconv.ParseFloat(f[2], 64)
+		if err1 != nil || err2 != nil {
+			return 0
+		}
+		return w * h
+	}
+	return 0
+}
+
+// largeImages counts the images per page in 'pdfimages -list' output that
+// cover at least minImageShare of the page. The size on the page comes from
+// the pixels and the resolution (x-ppi, y-ppi). When the page area is not
+// known, images of at least 200 x 200 pixels count.
+func largeImages(list string, area float64) map[int]int {
 	counts := map[int]int{}
 	header := true
 	for _, line := range strings.Split(list, "\n") {
@@ -346,14 +371,26 @@ func largeImages(list string) map[int]int {
 			header = !strings.HasPrefix(line, "----")
 			continue
 		}
+		// page num type width height color comp bpc enc interp object ID x-ppi y-ppi size ratio
 		f := strings.Fields(line)
 		if len(f) < 5 || f[2] != "image" {
 			continue
 		}
 		page, err1 := strconv.Atoi(f[0])
-		w, err2 := strconv.Atoi(f[3])
-		h, err3 := strconv.Atoi(f[4])
-		if err1 == nil && err2 == nil && err3 == nil && w*h >= minImagePixels {
+		w, err2 := strconv.ParseFloat(f[3], 64)
+		h, err3 := strconv.ParseFloat(f[4], 64)
+		if err1 != nil || err2 != nil || err3 != nil {
+			continue
+		}
+		large := w*h >= 40000
+		if area > 0 && len(f) >= 14 {
+			xppi, err4 := strconv.ParseFloat(f[12], 64)
+			yppi, err5 := strconv.ParseFloat(f[13], 64)
+			if err4 == nil && err5 == nil && xppi > 0 && yppi > 0 {
+				large = (w/xppi*72)*(h/yppi*72) >= minImageShare*area
+			}
+		}
+		if large {
 			counts[page]++
 		}
 	}

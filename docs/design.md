@@ -69,7 +69,7 @@ Derived files of a WhatsApp export (iOS or Android, in any supported language): 
 | `page-NNN.ocr.txt` | `page-ocr` | OCR of the page, when the text layer has fewer than `--min-text` letters and digits (method `ocr`). |
 | `ocr.txt` | `image-ocr` | OCR of an image. |
 
-Each entry has `from` (the PDF or image), `page`, and `images`: the number of images of at least about 200 x 200 pixels on the page (`pdfimages -list`). Pages with images are listed in the result, because photos and plans carry facts that the text does not.
+Each entry has `from` (the PDF or image), `page`, and `images`: the number of images that cover at least 10% of the page (size from `pdfimages -list` pixels and resolution, page size from `pdfinfo`), so logos and letterheads do not count. Pages with images are listed in the result, because photos and plans carry facts that the text does not.
 
 Tools: poppler (`pdfinfo`, `pdftotext`, `pdfimages`, `pdftoppm`) and tesseract with `eng`, `spa`, `fra` and `por`. They run in the tools image, built locally from `internal/tools/Dockerfile` on first use (tag `openarch-docs-tools:<hash of the Dockerfile>`). Each run has no network, no capabilities, and only the input file (read only) and a work folder mounted. A PDF takes two runs: text layer and image list, then page images and OCR. `--tools local` runs the same programs from `PATH`.
 
