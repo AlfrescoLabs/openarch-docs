@@ -204,3 +204,40 @@ func TestCleanDescription(t *testing.T) {
 		t.Errorf("cleanDescription = %q", got)
 	}
 }
+
+func TestDescribeSkipsTextPages(t *testing.T) {
+	root, m := newCase(t)
+	// Page 1 has a plan, but also a full page of OCR text: a scanned document.
+	var page casefile.Derived
+	for _, d := range m.Derived {
+		if d.Kind == extract.KindPageImage && d.Page == 1 {
+			page = d
+		}
+	}
+	ocr := casefile.Derived{Source: page.Source, From: page.From, Page: 1, Kind: extract.KindPageOCR, Method: extract.MethodOCR}
+	if _, err := m.WriteDerived(root, strings.TrimSuffix(page.Path, ".png")+".ocr.txt", []byte(strings.Repeat("palabra ", 100)), ocr); err != nil {
+		t.Fatal(err)
+	}
+	// A description of it from an older run.
+	old := casefile.Derived{Source: page.Source, From: page.From, Page: 1, Kind: KindDescription, Method: MethodVision}
+	if _, err := m.WriteDerived(root, strings.TrimSuffix(page.Path, ".png")+".describe.txt", []byte("old"), old); err != nil {
+		t.Fatal(err)
+	}
+	if err := casefile.Save(root, m); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Describe(context.Background(), options(root, &fakeChat{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only foto.png: the page is a text page, and its old description is removed.
+	if res.Done != 1 || res.Removed != 1 {
+		t.Errorf("result = %+v", res)
+	}
+	m, _ = casefile.Load(root)
+	for _, d := range m.Derived {
+		if d.Kind == KindDescription && d.Page == 1 {
+			t.Errorf("description of a text page kept: %s", d.Path)
+		}
+	}
+}

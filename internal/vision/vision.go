@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/image/draw"
 
@@ -154,6 +155,8 @@ type Result struct {
 	Skipped  int    `json:"skipped"`
 	// Small counts images below about 200 x 200 pixels, such as logos.
 	Small int `json:"small"`
+	// Removed counts descriptions of text pages that were dropped.
+	Removed int `json:"removed"`
 	// Pending counts images left for a later run because of Max.
 	Pending     int `json:"pending"`
 	Unsupported int `json:"unsupported"`
@@ -175,7 +178,28 @@ func Describe(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 	res := &Result{Model: opts.Model, Language: opts.Language.Code, Items: []Item{}}
-	for _, t := range targets(m, opts.AllPages) {
+	// Descriptions of text pages from older runs only add noise.
+	if !opts.AllPages {
+		keep := map[string]bool{}
+		for _, t := range targets(opts.Root, m, false) {
+			keep[t.from+"#"+strconv.Itoa(t.page)] = true
+		}
+		if err := m.RemoveDerived(opts.Root, func(d casefile.Derived) bool {
+			drop := d.Kind == KindDescription && d.Page > 0 && !keep[d.From+"#"+strconv.Itoa(d.Page)]
+			if drop {
+				res.Removed++
+			}
+			return drop
+		}); err != nil {
+			return nil, err
+		}
+		if res.Removed > 0 {
+			if err := casefile.Save(opts.Root, m); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for _, t := range targets(opts.Root, m, opts.AllPages) {
 		it := Item{Path: t.image, From: t.from, Page: t.page}
 		switch {
 		case !opts.Force && described(m, t):
@@ -222,7 +246,7 @@ func Describe(ctx context.Context, opts Options) (*Result, error) {
 // Pending returns the number of images that describe would describe.
 func Pending(root string, m *casefile.Manifest) int {
 	n := 0
-	for _, t := range targets(m, false) {
+	for _, t := range targets(root, m, false) {
 		if !described(m, t) && precheck(root, t) == "" {
 			n++
 		}
@@ -230,10 +254,41 @@ func Pending(root string, m *casefile.Manifest) int {
 	return n
 }
 
-func targets(m *casefile.Manifest, allPages bool) []target {
-	var out []target
+// textPage is the number of letters from which a page is a text page, such
+// as a scanned deed: its OCR or text layer holds what matters, and a
+// description only repeats it and crowds the search results.
+const textPage = 600
+
+// pageLetters returns, for each PDF page, the letters of its longest text
+// (text layer or OCR), keyed by "<pdf>#<page>".
+func pageLetters(root string, m *casefile.Manifest) map[string]int {
+	out := map[string]int{}
 	for _, d := range m.Derived {
-		if d.Kind == extract.KindPageImage && (d.Images > 0 || allPages) {
+		if d.Kind != extract.KindPageText && d.Kind != extract.KindPageOCR {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(d.Path)))
+		if err != nil {
+			continue
+		}
+		n := 0
+		for _, r := range string(data) {
+			if unicode.IsLetter(r) {
+				n++
+			}
+		}
+		key := d.From + "#" + strconv.Itoa(d.Page)
+		out[key] = max(out[key], n)
+	}
+	return out
+}
+
+func targets(root string, m *casefile.Manifest, allPages bool) []target {
+	var out []target
+	letters := pageLetters(root, m)
+	for _, d := range m.Derived {
+		textOnly := letters[d.From+"#"+strconv.Itoa(d.Page)] >= textPage
+		if d.Kind == extract.KindPageImage && (allPages || (d.Images > 0 && !textOnly)) {
 			out = append(out, target{image: d.Path, from: d.From, page: d.Page, source: d.Source,
 				out: strings.TrimSuffix(d.Path, path.Ext(d.Path)) + ".describe.txt"})
 		}

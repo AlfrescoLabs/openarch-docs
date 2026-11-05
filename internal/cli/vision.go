@@ -34,6 +34,9 @@ func (r describeResult) WriteText(w io.Writer) error {
 	}
 	line := fmt.Sprintf("Described %d images, %d already done, %d small (logos), %d unsupported, %d failed. Model: %s, language: %s.",
 		r.Done, r.Skipped, r.Small, r.Unsupported, r.Failed, r.Model, r.Language)
+	if r.Removed > 0 {
+		line += fmt.Sprintf(" Removed %d descriptions of text pages.", r.Removed)
+	}
 	if r.Pending > 0 {
 		line += fmt.Sprintf(" %d images left; run describe again.", r.Pending)
 	}
@@ -52,7 +55,10 @@ func newDescribeCmd(app *App) *cobra.Command {
 		Use:   "describe",
 		Short: "Describe photos, plans and image pages with the vision model",
 		Long: `Write a text description of each photo, plan, screenshot and PDF page with
-large images, with the local vision model of the profile. Run extract first,
+large images, with the local vision model of the profile. Pages with a lot of
+text (600 letters or more in the text layer or OCR), such as a scanned deed,
+are not described: their text says it, and descriptions of them crowd the
+search results. Descriptions of such pages from earlier runs are removed. Run extract first,
 and index after, so search and ask find the descriptions.
 
 Each description lists the type of image, every readable text, what the image
