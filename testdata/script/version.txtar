@@ -1,0 +1,18 @@
+# Text output
+exec openarch-docs version
+stdout '^openarch-docs '
+! stderr .
+
+# JSON output
+exec openarch-docs version --output json
+stdout '"version": '
+! stderr .
+
+# JSON from the variable that openarch sets for plugins
+env OPENARCH_OUTPUT=json
+exec openarch-docs version
+stdout '"platform": '
+
+# Errors are JSON too, on stdout, with the usage exit code
+! exec openarch-docs nosuch
+stdout '"code": "usage"'
