@@ -1,0 +1,32 @@
+exec openarch-docs ingest --case case
+exec openarch-docs index --no-embed --case case
+
+# Without Docker Model Runner, ask says how to start it.
+! exec openarch-docs ask --case case --model-url http://127.0.0.1:9 donde esta el sotano
+stderr 'docker desktop enable model-runner'
+
+# timeline needs no model.
+exec openarch-docs timeline --case case
+stdout '^2026-10-29T18:00  forwarded  Instalador <instalador@example.net>: Plano$'
+stdout '^2026-10-30T07:51  email      Ana <ana@example.com>: Fwd: Plano$'
+
+exec openarch-docs timeline --case case --kind email -o json
+stdout '"kind": "email"'
+! stdout '"kind": "forwarded"'
+
+! exec openarch-docs timeline --case case --since ayer
+stderr 'bad date "ayer"'
+
+-- case/aviso.eml --
+From: Ana <ana@example.com>
+To: Luis <luis@example.org>
+Subject: Fwd: Plano
+Date: Thu, 30 Oct 2026 07:51:00 +0100
+Content-Type: text/plain; charset=utf-8
+
+---------- Mensaje reenviado ---------
+De: Instalador <instalador@example.net>
+Fecha: mié, 29 oct 2026 a las 18:00
+Asunto: Plano
+
+La centralización está en el sótano -2.

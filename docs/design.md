@@ -91,3 +91,21 @@ HEIC and WebP files are reported as unsupported: tesseract cannot read them.
 `search` merges the BM25 list and the embedding list with reciprocal rank fusion (k = 60). Each hit says which search found it (`text`, `meaning`).
 
 Models run on Docker Model Runner at `--model-url` (default `http://localhost:12434/engines/v1`, env `OPENARCH_DOCS_MODEL_URL`). `--profile` (env `OPENARCH_DOCS_PROFILE`) picks the models.
+
+## Ask
+
+`ask` searches the index for the question (case documents and references; notes only with `--with-notes`), and gives the best chunks to the chat model of the profile as numbered sources. Each source shows its role (`case`, `reference`, `note`), its citation and its sender.
+
+The system message asks the model to answer in the language of the question, to cite a source for every fact as `[n]`, to say plainly when the sources do not hold the answer, to keep facts apart from interpretations, to treat notes as interpretations and references as rules, and to blame nobody without a source. The model makes no tool calls, so small models work.
+
+The result lists the sources, marks the cited ones, and lists cited numbers that are not sources (`unknown`): a sign that the model made up a citation.
+
+## Timeline
+
+`timeline` needs no model. It lists, oldest first:
+
+- each email (`message.txt` headers),
+- each forwarded or quoted message in an email body (`forwarded` in the manifest),
+- each chat message (time, sender, text or attachment name).
+
+Quoted dates are read in every supported language with the month names in `internal/lang` ("mié, 29 oct 2026 a las 18:00", "Fri, Oct 30, 2026 at 5:51 PM", "29 de outubro de 2026 18:00", "30/10/2026 7:51"; numeric dates are day first unless the month would pass 12). Times stay in the time zone of the source. A message that is an email in one file and a quoted forward in another is listed once, as the email.

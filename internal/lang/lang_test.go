@@ -78,3 +78,27 @@ func TestStopWords(t *testing.T) {
 		}
 	}
 }
+
+func TestMonths(t *testing.T) {
+	// A name shared by two languages must be the same month in both.
+	seen := map[string]int{}
+	for _, l := range All {
+		for i, names := range l.Months {
+			if len(names) == 0 {
+				t.Errorf("%s: no names for month %d", l.Code, i+1)
+			}
+			for _, n := range names {
+				if old, ok := seen[n]; ok && old != i+1 {
+					t.Errorf("%q is month %d and %d", n, old, i+1)
+				}
+				seen[n] = i + 1
+			}
+		}
+	}
+	m := MonthNumbers()
+	for name, want := range map[string]int{"oct": 10, "outubro": 10, "aout": 8, "dic": 12, "dez": 12, "may": 5, "mai": 5} {
+		if m[name] != want {
+			t.Errorf("%s = %d, want %d", name, m[name], want)
+		}
+	}
+}

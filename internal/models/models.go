@@ -108,6 +108,40 @@ func (c *Client) Embed(ctx context.Context, model string, inputs []string) ([][]
 	return out, nil
 }
 
+// Message is one chat message.
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// ChatOptions tune a chat call.
+type ChatOptions struct {
+	Temperature float64
+	MaxTokens   int
+}
+
+// Chat returns the answer of the model to messages.
+func (c *Client) Chat(ctx context.Context, model string, messages []Message, opts ChatOptions) (string, error) {
+	body := map[string]any{"model": model, "messages": messages, "temperature": opts.Temperature}
+	if opts.MaxTokens > 0 {
+		body["max_tokens"] = opts.MaxTokens
+	}
+	var resp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := c.post(ctx, "/chat/completions", model, body, &resp); err != nil {
+		return "", err
+	}
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("model %s: no answer", model)
+	}
+	return strings.TrimSpace(resp.Choices[0].Message.Content), nil
+}
+
 func (c *Client) post(ctx context.Context, path, model string, body, out any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
