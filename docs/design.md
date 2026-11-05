@@ -124,3 +124,13 @@ Images are scaled down to 1600 pixels on the longest side and sent inline as dat
 `look` sends one or more images and one question to the vision model. An image is a path in the case folder or `<pdf>#<page>`. Each image is labeled "Image N: name" in the message. The answer language follows the question. Nothing is saved.
 
 With the large profile both commands unload the agent and chat models first (`docker model unload`), so the vision model has memory.
+
+## OpenArch
+
+OpenArch is the store of record. `sync` uploads every original to `<remote>/originals/<path>` and every derived file to `<remote>/<path>` (paths start with `extracted/`), creating the folders as needed. The default remote is `/cases/<slug of the case folder name>`. The search index is a cache and is not uploaded.
+
+Each uploaded document has `sys_description` = `openarch-docs/1 ` + one line of JSON: `{"role":"original","original":{...}}` or `{"role":"derived","derived":{...}}`, the manifest entry of the file. `extracted/sync.json` keeps the remote, the folder ids, and the id and SHA-256 of each uploaded file; only files whose SHA-256 changed are uploaded again, with `openarch documents upload --replace`, so a document keeps its id.
+
+`reindex` lists the remote folder tree, reads the descriptions, downloads each file whose local copy is missing or differs (through a temporary file), and merges the entries into the local manifest. A local original that differs is never overwritten; it is reported as a conflict. Documents without the description prefix, and entries whose path would leave the case folder, are skipped. Then it updates the search index.
+
+The plugin talks to OpenArch only by running `openarch ... --output json --non-interactive` (`$OPENARCH_BIN`, else `openarch` on `PATH`), so it never sees a password. Exit codes of openarch pass through (6 for a failed login). It needs an openarch with `documents upload --replace` and `--description`.
