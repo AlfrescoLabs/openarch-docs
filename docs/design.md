@@ -94,11 +94,13 @@ Models run on Docker Model Runner at `--model-url` (default `http://localhost:12
 
 ## Ask
 
-`ask` searches the index for the question (case documents and references; notes only with `--with-notes`), and gives the best chunks to the chat model of the profile as numbered sources. Pieces of the same file become one source. Each source shows its role (`case`, `reference`, `note`), its citation and its sender. The question comes before and after the sources.
+`ask` searches the index for the question (case documents and references; notes only with `--with-notes`), and gives the best chunks to the chat model of the profile as numbered sources. Each source is between `<source n="N" role="..." file="..." sender="...">` and `</source>`. Pieces of the same file become one source, labeled "part K of source N". Each source shows its role (`case`, `reference`, `note`), its citation and its sender. The question comes before and after the sources.
 
 The system message asks the model to answer in the language of the question, to cite a source for every fact as `[n]`, to say plainly when the sources do not hold the answer, to keep facts apart from interpretations, to treat notes as interpretations and references as rules, and to blame nobody without a source. The model makes no tool calls, so small models work.
 
 The answer must be 1 to 5 sentences with source numbers. An answer with no sentences (only citations) gets one retry with a reminder, then a `warning`. The result lists the sources, marks the cited ones, and lists cited numbers that are not sources (`unknown`): a sign that the model made up a citation.
+
+A citation check needs no model: for each sentence it counts the content words (four letters or more, no stop words, accents folded) found in each source. When a source that is not cited holds at least three of them and half again as many as the best cited source, the sentence is listed in `checks` with the better source. Emails quote other emails, and models tend to cite the source of the writer instead of the source of the words.
 
 ## Timeline
 

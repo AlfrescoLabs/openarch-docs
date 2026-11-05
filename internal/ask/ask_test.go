@@ -81,7 +81,7 @@ func TestRun(t *testing.T) {
 		t.Fatalf("messages = %+v", chat.messages)
 	}
 	user := chat.messages[1].Content
-	for _, want := range []string{`(case) aviso.eml, email "Plano"`, "Sender: Ana <ana@example.com>", "(reference) ley.txt", "Question: ¿Dónde está el sotano?", "Answer in Spanish."} {
+	for _, want := range []string{`role="case" file="aviso.eml, email 'Plano'`, `sender="Ana (ana@example.com)"`, `role="reference" file="ley.txt"`, "Question: ¿Dónde está el sotano?", "Answer in Spanish."} {
 		if !strings.Contains(user, want) {
 			t.Errorf("user message has no %q:\n%s", want, user)
 		}
@@ -91,7 +91,7 @@ func TestRun(t *testing.T) {
 	if err != nil || len(res.Sources) != 3 {
 		t.Fatalf("with notes = %+v, %v", res, err)
 	}
-	if !strings.Contains(chat.messages[1].Content, "(note) note notes/estado.md") {
+	if !strings.Contains(chat.messages[1].Content, `role="note" file="note notes/estado.md"`) {
 		t.Error("note not marked as note")
 	}
 }
@@ -141,8 +141,23 @@ func TestSameFileIsOneSource(t *testing.T) {
 	}
 	chat := &fakeChat{answers: []string{"Hay contadores en el sotano [1]."}}
 	res, err := Run(context.Background(), Options{Question: "sotano contadores", Index: x, Chat: chat, ChatModel: "m"})
-	if err != nil || len(res.Sources) != 1 || !strings.Contains(chat.messages[1].Content, "[...]") {
+	if err != nil || len(res.Sources) != 1 || !strings.Contains(chat.messages[1].Content, "(part 2 of source 1)") {
 		t.Errorf("sources = %+v, %v", res.Sources, err)
+	}
+}
+
+func TestCheckCitations(t *testing.T) {
+	sources := []string{
+		"Alarroya contesta: las fotos de la pagina seis no las hemos aportado nosotros; las hacen los tecnicos de la distribuidora durante las visitas.",
+		"Solicitud de suministro registrada con el expediente y la direccion del garaje.",
+	}
+	answer := "Alarroya dice que no aportaron las fotos, que hacen los tecnicos durante las visitas [2]. El expediente esta registrado [2]."
+	got := checkCitations(answer, sources)
+	if len(got) != 1 || got[0].Sentence != 1 || got[0].Better != 1 || !slices.Equal(got[0].Cited, []int{2}) {
+		t.Errorf("checks = %+v", got)
+	}
+	if got := checkCitations("Alarroya dice que no aportaron las fotos durante las visitas [1].", sources); len(got) != 0 {
+		t.Errorf("right citation flagged: %+v", got)
 	}
 }
 

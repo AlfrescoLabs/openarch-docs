@@ -12,6 +12,8 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/AlfrescoLabs/openarch-docs/internal/casefile"
 	"github.com/AlfrescoLabs/openarch-docs/internal/index"
 	"github.com/AlfrescoLabs/openarch-docs/internal/lang"
@@ -58,6 +60,9 @@ type Result struct {
 	// Unknown are numbers the answer cites that are not sources. They mean
 	// the model made up a citation.
 	Unknown []int `json:"unknown"`
+	// Checks are sentences whose words match another source much better than
+	// the cited one: the model may have cited the wrong source.
+	Checks []Check `json:"checks"`
 	// Warning tells that the answer is not usable, such as an answer with
 	// only citations.
 	Warning string `json:"warning,omitempty"`
@@ -67,11 +72,11 @@ type Result struct {
 const retryPrompt = "Your answer has no sentences. Write 1 to 5 full sentences in the language of the question, each followed by its source numbers. If the sources do not hold the answer, write that in one sentence."
 
 // instruction is the system message. The answer language follows the question.
-const instruction = `You answer questions about a case file. Use only the numbered sources in the user message.
+const instruction = `You answer questions about a case file. Use only the sources in the user message. Each source is between <source n="N" ...> and </source>.
 
 Rules:
 - Answer in the language of the question.
-- Every fact needs the number of its source in square brackets, like [2]. Use only numbers from the list.
+- Every fact needs the number of the source whose text holds it, in square brackets, like [2]. An email often quotes other emails: cite the source where you read the words, not the source of the writer.
 - If the sources do not hold the answer, say so plainly, and say which document would hold it.
 - Keep facts apart from interpretations. Mark an interpretation as such.
 - Sources marked "note" are earlier notes of the user: interpretations, not evidence. Prefer case sources.
@@ -96,7 +101,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{Question: opts.Question, Model: opts.ChatModel, Sources: []Source{}, Cited: []int{}, Unknown: []int{}}
+	res := &Result{Question: opts.Question, Model: opts.ChatModel, Sources: []Source{}, Cited: []int{}, Unknown: []int{}, Checks: []Check{}}
 	if len(hits) == 0 {
 		res.Answer = "The index has no text for this question. Run 'openarch docs index', or add the documents that hold the answer."
 		return res, nil
@@ -118,16 +123,25 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		groups = append(groups, g)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Question: %s\n\nSources:\n\n", opts.Question)
+	var sourceTexts []string
+	fmt.Fprintf(&b, "Question: %s\n\n", opts.Question)
 	for i, g := range groups {
 		h := g.hit
 		s := Source{N: i + 1, Cite: h.Cite, Path: h.Path, Origin: h.Origin, Page: h.Page, Role: h.Role}
 		res.Sources = append(res.Sources, s)
-		fmt.Fprintf(&b, "[%d] (%s) %s\n", s.N, s.Role, s.Cite)
+		fmt.Fprintf(&b, "<source n=\"%d\" role=\"%s\" file=\"%s\"", s.N, s.Role, attr(s.Cite))
 		if h.Sender != "" {
-			fmt.Fprintf(&b, "Sender: %s\n", h.Sender)
+			fmt.Fprintf(&b, " sender=\"%s\"", attr(h.Sender))
 		}
-		fmt.Fprintf(&b, "%s\n\n", strings.Join(g.texts, "\n[...]\n"))
+		b.WriteString(">\n")
+		for j, t := range g.texts {
+			if len(g.texts) > 1 {
+				fmt.Fprintf(&b, "(part %d of source %d)\n", j+1, s.N)
+			}
+			b.WriteString(t + "\n")
+		}
+		b.WriteString("</source>\n\n")
+		sourceTexts = append(sourceTexts, strings.Join(g.texts, "\n"))
 	}
 	fmt.Fprintf(&b, "Question: %s", opts.Question)
 	// Models often answer in English when told to use "the language of the
@@ -154,8 +168,101 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 	res.Answer = answer
+	res.Checks = checkCitations(answer, sourceTexts)
 	res.Cited, res.Unknown = citations(answer, len(res.Sources))
 	return res, nil
+}
+
+// attr makes s safe inside a double-quoted attribute.
+func attr(s string) string {
+	return strings.NewReplacer(`"`, "'", "\n", " ", "<", "(", ">", ")").Replace(s)
+}
+
+// Check is a sentence that may cite the wrong source.
+type Check struct {
+	Sentence int    `json:"sentence"`
+	Text     string `json:"text"`
+	Cited    []int  `json:"cited"`
+	// Better is the source whose text has the most words of the sentence.
+	Better int `json:"better"`
+}
+
+// sentenceEnd splits an answer into sentences after their citations.
+var sentenceEnd = regexp.MustCompile(`([.!?])(\s*\[[\d,\s\]\[]*\])?\s+`)
+
+// checkCitations compares the content words of each cited sentence with the
+// text of every source. When another source holds clearly more of them than
+// every cited source, the sentence is reported. The check needs no model.
+func checkCitations(answer string, sources []string) []Check {
+	checks := []Check{}
+	words := make([]map[string]bool, len(sources))
+	for i, t := range sources {
+		words[i] = contentWords(t)
+	}
+	parts := sentenceEnd.ReplaceAllString(answer, "$1$2\x00")
+	n := 0
+	for _, sent := range strings.Split(parts, "\x00") {
+		if strings.TrimSpace(sent) == "" {
+			continue
+		}
+		n++
+		cited, _ := citations(sent, len(sources))
+		if len(cited) == 0 {
+			continue
+		}
+		sw := contentWords(citation.ReplaceAllString(sent, " "))
+		if len(sw) < 3 {
+			continue
+		}
+		score := func(i int) int {
+			c := 0
+			for w := range sw {
+				if words[i][w] {
+					c++
+				}
+			}
+			return c
+		}
+		bestCited := 0
+		for _, c := range cited {
+			bestCited = max(bestCited, score(c-1))
+		}
+		better, betterScore := 0, 0
+		for i := range sources {
+			if sc := score(i); sc > betterScore {
+				better, betterScore = i+1, sc
+			}
+		}
+		if !slices.Contains(cited, better) && betterScore >= 3 && betterScore*2 >= bestCited*3 {
+			checks = append(checks, Check{Sentence: n, Text: strings.TrimSpace(sent), Cited: cited, Better: better})
+		}
+	}
+	return checks
+}
+
+// contentWords returns the words of s that carry meaning: four letters or
+// more, not stop words, lower case and without accents.
+func contentWords(s string) map[string]bool {
+	out := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+		w = foldAccents(w)
+		if len([]rune(w)) >= 4 && !stopWords[w] {
+			out[w] = true
+		}
+	}
+	return out
+}
+
+var stopWords = lang.AllStopWords()
+
+func foldAccents(s string) string {
+	var b strings.Builder
+	for _, r := range norm.NFD.String(s) {
+		if !unicode.Is(unicode.Mn, r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // hasSentences reports whether the answer has words besides its citations.

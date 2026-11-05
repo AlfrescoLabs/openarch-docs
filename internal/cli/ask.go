@@ -28,6 +28,11 @@ func (r askResult) WriteText(w io.Writer) error {
 			return err
 		}
 	}
+	for _, c := range r.Checks {
+		if _, err := fmt.Fprintf(w, "Check: sentence %d cites %v, but its words are in [%d].\n", c.Sentence, c.Cited, c.Better); err != nil {
+			return err
+		}
+	}
 	if r.Warning != "" {
 		if _, err := fmt.Fprintf(w, "Warning: %s\n", r.Warning); err != nil {
 			return err
