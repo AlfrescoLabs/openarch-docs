@@ -34,3 +34,15 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: latest
+
+  tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Extract with the tools image
+        run: go test ./internal/extract -run TestRealTools -v
+        env:
+          OPENARCH_DOCS_TOOLS_TEST: docker

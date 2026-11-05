@@ -8,7 +8,7 @@
 2. **Offline.** The plugin never downloads documents. Law texts and screenshots are files the user adds to the case folder.
 3. **OpenArch is required.** It is the store of record for originals and derived files. The local index is a cache that can be rebuilt from OpenArch.
 4. **Originals never change.** Every original has a SHA-256 checksum. Every derived file records its source file and, when it applies, the attachment name and the message headers.
-5. **Only Docker on the host.** Text extraction, page rendering and OCR (Spanish and English) run in the plugin tools image with no network.
+5. **Only Docker on the host.** Text extraction, page rendering and OCR run in the plugin tools image with no network.
 6. **Same output contract as openarch.** Every command supports `--output json`. Results go to stdout, logs to stderr. In JSON mode errors also go to stdout. Exit codes match openarch.
 7. **Languages.** English, Spanish, French and Portuguese. The words that mail clients and chat exports write (forward markers, quoted headers, attachment lines) and the OCR codes live in one table, `internal/lang`. Parsers match every language at once, so one case folder can mix them. A new language is one new entry.
 8. **Answers cite sources.** Every fact in an answer points to a file and a page. Case facts, reference texts (law) and notes (interpretations) are cited apart.
@@ -57,3 +57,20 @@ Derived files of an email: `message.txt` (headers and body text), `message.html`
 - `part` and `attachment`: the MIME part number and the file name the sender gave.
 
 Derived files of a WhatsApp export (iOS or Android, in any supported language): `chat.txt`, `messages.json` and `media/`. Each media file records who sent it and when. The date order (day or month first) comes from the export; when no date shows it, `messages.json` keeps the time as written and has no ISO time.
+
+## Extract
+
+`extract` reads every PDF and image: originals, and files that `ingest` unpacked (attachments, inline images, chat media, zip files). Results go next to the file: `extracted/<name>-<hash8>/` for an original, `<file>.extract/` for an unpacked file.
+
+| File | Kind | Content |
+| --- | --- | --- |
+| `page-NNN.txt` | `page-text` | PDF text layer of the page (method `text-layer`). Only when the page has text. |
+| `page-NNN.png` | `page-image` | Image of the page, for vision models and for people. |
+| `page-NNN.ocr.txt` | `page-ocr` | OCR of the page, when the text layer has fewer than `--min-text` letters and digits (method `ocr`). |
+| `ocr.txt` | `image-ocr` | OCR of an image. |
+
+Each entry has `from` (the PDF or image), `page`, and `images`: the number of images of at least about 200 x 200 pixels on the page (`pdfimages -list`). Pages with images are listed in the result, because photos and plans carry facts that the text does not.
+
+Tools: poppler (`pdfinfo`, `pdftotext`, `pdfimages`, `pdftoppm`) and tesseract with `eng`, `spa`, `fra` and `por`. They run in the tools image, built locally from `internal/tools/Dockerfile` on first use (tag `openarch-docs-tools:<hash of the Dockerfile>`). Each run has no network, no capabilities, and only the input file (read only) and a work folder mounted. A PDF takes two runs: text layer and image list, then page images and OCR. `--tools local` runs the same programs from `PATH`.
+
+HEIC and WebP files are reported as unsupported: tesseract cannot read them.

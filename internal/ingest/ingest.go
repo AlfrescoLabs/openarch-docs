@@ -127,7 +127,7 @@ func ingestFile(opts Options, m *casefile.Manifest, p string) (File, error) {
 		return f, nil
 	}
 	if f.Status == StatusChanged {
-		if err := removeDerived(opts.Root, m, p); err != nil {
+		if err := m.RemoveDerived(opts.Root, func(d casefile.Derived) bool { return d.Source == p }); err != nil {
 			return File{}, err
 		}
 		m.Originals = slices.DeleteFunc(m.Originals, func(o casefile.Original) bool { return o.Path == p })
@@ -136,7 +136,7 @@ func ingestFile(opts Options, m *casefile.Manifest, p string) (File, error) {
 		Path: p, SHA256: sum, Size: size, Kind: f.Kind, Role: f.Role, IngestedAt: opts.Now().UTC().Truncate(time.Second),
 	})
 	w := &writer{root: opts.Root, manifest: m, source: p,
-		dir: path.Join(casefile.ExtractedDir, casefile.Slug(strings.TrimSuffix(path.Base(p), path.Ext(p)), 40)+"-"+sum[:8])}
+		dir: casefile.DerivedDir(p, sum)}
 	data, err := os.ReadFile(filepath.Join(opts.Root, filepath.FromSlash(p)))
 	if err != nil {
 		return File{}, err
@@ -160,22 +160,6 @@ func ingestFile(opts Options, m *casefile.Manifest, p string) (File, error) {
 	return f, nil
 }
 
-// removeDerived deletes the derived files of an original that changed.
-func removeDerived(root string, m *casefile.Manifest, source string) error {
-	keep := m.Derived[:0]
-	for _, d := range m.Derived {
-		if d.Source != source {
-			keep = append(keep, d)
-			continue
-		}
-		if err := os.Remove(filepath.Join(root, filepath.FromSlash(d.Path))); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-	}
-	m.Derived = keep
-	return nil
-}
-
 // writer writes the derived files of one original.
 type writer struct {
 	root     string
@@ -187,36 +171,12 @@ type writer struct {
 
 // write stores data at a free path near name and adds it to the manifest.
 func (w *writer) write(name string, data []byte, d casefile.Derived) error {
-	p := w.freePath(name)
-	dst := filepath.Join(w.root, filepath.FromSlash(p))
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	d.Source = w.source
+	if _, err := w.manifest.WriteDerived(w.root, name, data, d); err != nil {
 		return err
 	}
-	if err := os.WriteFile(dst, data, 0o644); err != nil {
-		return err
-	}
-	d.Path, d.SHA256, d.Size, d.Source = p, casefile.HashBytes(data), int64(len(data)), w.source
-	w.manifest.Derived = append(w.manifest.Derived, d)
 	w.count++
 	return nil
-}
-
-// freePath returns name, or name with a number before the extension when a
-// derived file already has that path.
-func (w *writer) freePath(name string) string {
-	taken := func(p string) bool {
-		return slices.ContainsFunc(w.manifest.Derived, func(d casefile.Derived) bool { return d.Path == p })
-	}
-	if !taken(name) {
-		return name
-	}
-	ext := path.Ext(name)
-	base := strings.TrimSuffix(name, ext)
-	for i := 2; ; i++ {
-		if p := fmt.Sprintf("%s-%d%s", base, i, ext); !taken(p) {
-			return p
-		}
-	}
 }
 
 // email writes the body, the attachments and the nested messages of msg

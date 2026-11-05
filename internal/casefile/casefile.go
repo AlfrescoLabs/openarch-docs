@@ -91,6 +91,17 @@ type Derived struct {
 	Forwarded []MessageInfo `json:"forwarded,omitempty"`
 	// Chat is the chat message that sent this file.
 	Chat *ChatInfo `json:"chat,omitempty"`
+	// From is the file this one was made from, when it is not Source itself,
+	// such as the PDF attachment of an email for the text of one page.
+	From string `json:"from,omitempty"`
+	// Page is the page number in From or Source, starting at 1.
+	Page int `json:"page,omitempty"`
+	// Method is how the text was made: "text-layer" or "ocr".
+	Method string `json:"method,omitempty"`
+	// Languages are the OCR languages, as ISO 639-1 codes.
+	Languages []string `json:"languages,omitempty"`
+	// Images is the number of large images on the page, such as photos or plans.
+	Images int `json:"images,omitempty"`
 }
 
 // MessageInfo holds the headers of an email.
@@ -175,6 +186,63 @@ func (m *Manifest) Original(p string) (Original, bool) {
 		return Original{}, false
 	}
 	return m.Originals[i], true
+}
+
+// DerivedDir returns the folder for the derived files of an original:
+// extracted/<name>-<first 8 characters of the SHA-256>.
+func DerivedDir(original, sha string) string {
+	name := strings.TrimSuffix(path.Base(original), path.Ext(original))
+	return path.Join(ExtractedDir, Slug(name, 40)+"-"+sha[:8])
+}
+
+// WriteDerived writes data to name, or to name with a number before the
+// extension when a derived file already has that path, and adds it to the
+// manifest. It fills the path, checksum and size of d and returns the path.
+func (m *Manifest) WriteDerived(root, name string, data []byte, d Derived) (string, error) {
+	p := m.freePath(name)
+	dst := filepath.Join(root, filepath.FromSlash(p))
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		return "", err
+	}
+	d.Path, d.SHA256, d.Size = p, HashBytes(data), int64(len(data))
+	m.Derived = append(m.Derived, d)
+	return p, nil
+}
+
+func (m *Manifest) freePath(name string) string {
+	taken := func(p string) bool {
+		return slices.ContainsFunc(m.Derived, func(d Derived) bool { return d.Path == p })
+	}
+	if !taken(name) {
+		return name
+	}
+	ext := path.Ext(name)
+	base := strings.TrimSuffix(name, ext)
+	for i := 2; ; i++ {
+		if p := fmt.Sprintf("%s-%d%s", base, i, ext); !taken(p) {
+			return p
+		}
+	}
+}
+
+// RemoveDerived deletes the derived files that drop returns true for, and
+// drops them from the manifest.
+func (m *Manifest) RemoveDerived(root string, drop func(Derived) bool) error {
+	keep := m.Derived[:0]
+	for _, d := range m.Derived {
+		if !drop(d) {
+			keep = append(keep, d)
+			continue
+		}
+		if err := os.Remove(filepath.Join(root, filepath.FromSlash(d.Path))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	m.Derived = keep
+	return nil
 }
 
 // FindOriginals lists the original files under root, as slash paths relative

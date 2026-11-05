@@ -152,7 +152,7 @@ Exit codes: 0 ok, 1 error, 2 bad usage, 3 prerequisite missing,
 	pf.BoolVarP(&app.Opts.Verbose, "verbose", "v", envBool(envVerbose), "print debug logs to stderr (env "+envVerbose+")")
 	pf.BoolVar(&app.Opts.NoColor, "no-color", false, "disable colors (env NO_COLOR)")
 
-	root.AddCommand(newIngestCmd(app), newVerifyCmd(app), newVersionCmd(app))
+	root.AddCommand(newIngestCmd(app), newExtractCmd(app), newVerifyCmd(app), newVersionCmd(app))
 	return root
 }
 
