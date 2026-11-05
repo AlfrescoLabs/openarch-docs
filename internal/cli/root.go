@@ -13,6 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/AlfrescoLabs/openarch-docs/internal/casefile"
+	"github.com/AlfrescoLabs/openarch-docs/internal/models"
 	"github.com/AlfrescoLabs/openarch-docs/internal/output"
 	"github.com/AlfrescoLabs/openarch-docs/internal/term"
 )
@@ -24,6 +26,8 @@ const (
 	envNonInteractive = "OPENARCH_NON_INTERACTIVE"
 	envVerbose        = "OPENARCH_VERBOSE"
 	envCase           = "OPENARCH_DOCS_CASE"
+	envProfile        = "OPENARCH_DOCS_PROFILE"
+	envModelURL       = "OPENARCH_DOCS_MODEL_URL"
 )
 
 // Streams holds the standard streams used by commands.
@@ -37,6 +41,8 @@ type Streams struct {
 type GlobalOptions struct {
 	Output         string
 	Case           string
+	Profile        string
+	ModelURL       string
 	NonInteractive bool
 	Verbose        bool
 	NoColor        bool
@@ -113,6 +119,14 @@ func (a *App) caseRoot() (string, error) {
 	return abs, nil
 }
 
+// requireManifest fails with a hint when the case folder has no manifest yet.
+func requireManifest(root string) error {
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(casefile.ManifestFile))); err != nil {
+		return output.Usage("the case folder has no "+casefile.ManifestFile, "Run 'openarch docs ingest' first.")
+	}
+	return nil
+}
+
 func newRootCmd(app *App) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "openarch-docs",
@@ -148,11 +162,14 @@ Exit codes: 0 ok, 1 error, 2 bad usage, 3 prerequisite missing,
 	pf := root.PersistentFlags()
 	pf.StringVarP(&app.Opts.Output, "output", "o", envOr(envOutput, string(output.Text)), "output format: text or json (env "+envOutput+")")
 	pf.StringVar(&app.Opts.Case, "case", os.Getenv(envCase), "case folder (env "+envCase+", default: current directory)")
+	pf.StringVar(&app.Opts.Profile, "profile", envOr(envProfile, "small"), "model profile: small (16 GB RAM) or large (32 GB) (env "+envProfile+")")
+	pf.StringVar(&app.Opts.ModelURL, "model-url", envOr(envModelURL, models.DefaultURL), "Docker Model Runner API (env "+envModelURL+")")
 	pf.BoolVar(&app.Opts.NonInteractive, "non-interactive", envBool(envNonInteractive), "never prompt; fail when a value is missing (env "+envNonInteractive+")")
 	pf.BoolVarP(&app.Opts.Verbose, "verbose", "v", envBool(envVerbose), "print debug logs to stderr (env "+envVerbose+")")
 	pf.BoolVar(&app.Opts.NoColor, "no-color", false, "disable colors (env NO_COLOR)")
 
-	root.AddCommand(newIngestCmd(app), newExtractCmd(app), newVerifyCmd(app), newVersionCmd(app))
+	_ = root.RegisterFlagCompletionFunc("profile", cobra.FixedCompletions(models.ProfileNames(), cobra.ShellCompDirectiveNoFileComp))
+	root.AddCommand(newIngestCmd(app), newExtractCmd(app), newIndexCmd(app), newSearchCmd(app), newVerifyCmd(app), newVersionCmd(app))
 	return root
 }
 

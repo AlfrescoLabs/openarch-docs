@@ -1,0 +1,43 @@
+# Index and search need ingest first.
+! exec openarch-docs index --no-embed --case case
+stderr 'Run .openarch docs ingest. first'
+
+exec openarch-docs ingest --case case
+
+# Full text search only: no model needed.
+exec openarch-docs index --no-embed --case case
+stdout 'Indexed 3 texts: 3 updated, 0 removed. 3 chunks, 0 embedded now.'
+stdout '3 chunks have no embeddings yet'
+exists case/extracted/index.sqlite
+
+exec openarch-docs search --no-embed --case case sotano
+stdout '^1. \[aviso.eml, email "Plano" of 2026-10-30T07:51:00\+01:00\] \(case, text\)$'
+
+exec openarch-docs search --no-embed --case case -o json recarga comunidad --role reference
+stdout '"cite": "ley.txt"'
+stdout '"role": "reference"'
+! stdout '"role": "case"'
+
+exec openarch-docs search --no-embed --case case nadaquecoincida
+stdout '^No results.$'
+
+# Without Docker Model Runner, the error says how to start it.
+! exec openarch-docs index --case case --model-url http://127.0.0.1:9 -o json
+stdout '"code": "prerequisite"'
+stdout 'docker desktop enable model-runner'
+
+! exec openarch-docs search --case case --profile huge x
+stderr 'unknown profile "huge"'
+
+-- case/aviso.eml --
+From: Ana <ana@example.com>
+To: Luis <luis@example.org>
+Subject: Plano
+Date: Thu, 30 Oct 2026 07:51:00 +0100
+Content-Type: text/plain; charset=utf-8
+
+La centralización está en el sótano -2, junto al cuarto de contadores.
+-- case/references/ley.txt --
+Articulo 17. Instalar un punto de recarga solo requiere comunicacion previa a la comunidad.
+-- case/notes/estado.md --
+Pendiente: comparar el plano con las fotos del cuarto de contadores.

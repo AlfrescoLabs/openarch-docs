@@ -74,3 +74,18 @@ Each entry has `from` (the PDF or image), `page`, and `images`: the number of im
 Tools: poppler (`pdfinfo`, `pdftotext`, `pdfimages`, `pdftoppm`) and tesseract with `eng`, `spa`, `fra` and `por`. They run in the tools image, built locally from `internal/tools/Dockerfile` on first use (tag `openarch-docs-tools:<hash of the Dockerfile>`). Each run has no network, no capabilities, and only the input file (read only) and a work folder mounted. A PDF takes two runs: text layer and image list, then page images and OCR. `--tools local` runs the same programs from `PATH`.
 
 HEIC and WebP files are reported as unsupported: tesseract cannot read them.
+
+## Index and search
+
+`index` keeps `extracted/index.sqlite` (pure Go SQLite). It is a cache: deleting it only costs a rebuild.
+
+- Texts: email bodies (`message.txt`), chat messages (one line per message, with time and sender), page texts and OCR from `extract`, text originals, and every `.md` and `.txt` file in `notes/`.
+- Each text is split into chunks of about 1000 characters at paragraph, line or sentence ends, with 150 characters of overlap. Chunks with fewer than 20 letters and digits (OCR noise of photos) are dropped.
+- Each chunk keeps its citation (file or attachment name, email subject and date, page, "(OCR)"), its path, the original, the role (`case`, `reference`, `note`), the sender and the date.
+- Full text search: FTS5 with `unicode61 remove_diacritics 2`, so queries without accents find accented words.
+- Embeddings: the embed model of the profile, with the citation before the chunk text. Queries get the mxbai instruction prefix. Vectors are normalized and compared by dot product over all chunks (case folders are small).
+- Only texts whose SHA-256 changed are split again. Chunks without embeddings (after `--no-embed`, or after a change of embedding model) get them on the next run.
+
+`search` merges the BM25 list and the embedding list with reciprocal rank fusion (k = 60). Each hit says which search found it (`text`, `meaning`).
+
+Models run on Docker Model Runner at `--model-url` (default `http://localhost:12434/engines/v1`, env `OPENARCH_DOCS_MODEL_URL`). `--profile` (env `OPENARCH_DOCS_PROFILE`) picks the models.
