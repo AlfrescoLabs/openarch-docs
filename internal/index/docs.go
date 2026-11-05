@@ -101,7 +101,7 @@ func citation(d casefile.Derived, byPath map[string]casefile.Derived) string {
 	}
 	switch {
 	case d.Kind == ingest.KindBody && d.Message != nil && d.Message.Subject != "":
-		name = fmt.Sprintf("%s, email %q", path.Base(d.Source), d.Message.Subject)
+		name = fmt.Sprintf("%s, email \"%s\"", path.Base(d.Source), d.Message.Subject)
 		if d.Message.Date != "" {
 			name += " of " + d.Message.Date
 		}
