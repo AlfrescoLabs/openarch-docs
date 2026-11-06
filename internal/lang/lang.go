@@ -38,9 +38,6 @@ type Language struct {
 	// LatestWords ask for the newest documents, such as "last" or "latest",
 	// without accents.
 	LatestWords []string
-	// StatePhrases ask how the case stands now, such as "next steps" or
-	// "current state", without accents. The newest documents answer them.
-	StatePhrases []string
 	// StopWords are short common words that full text search ignores.
 	StopWords []string
 	// PageWords are the words and short forms for "page", without accents.
@@ -62,7 +59,6 @@ var All = []Language{
 		ChatFileAttached: []string{"file attached"},
 		Reply:            [2]string{"On", "wrote"},
 		LatestWords:      []string{"last", "latest", "newest", "recent"},
-		StatePhrases:     []string{"next steps", "next step", "current state", "current status", "status of the case", "state of the case"},
 		StopWords:        []string{"the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "by", "for", "with", "from", "is", "are", "was", "were", "be", "been", "it", "its", "this", "that", "these", "those", "as", "not", "no", "but", "if", "so", "do", "does", "did", "has", "have", "had", "i", "you", "he", "she", "we", "they", "me", "my", "your", "our", "their"},
 		PageWords:        []string{"page", "pages", "pg", "p"},
 		Months:           [12][]string{{"january", "jan"}, {"february", "feb"}, {"march", "mar"}, {"april", "apr"}, {"may"}, {"june", "jun"}, {"july", "jul"}, {"august", "aug"}, {"september", "sep", "sept"}, {"october", "oct"}, {"november", "nov"}, {"december", "dec"}},
@@ -77,7 +73,6 @@ var All = []Language{
 		ChatFileAttached: []string{"archivo adjunto"},
 		Reply:            [2]string{"El", "escribió"},
 		LatestWords:      []string{"ultimo", "ultima", "ultimos", "ultimas", "reciente", "recientes"},
-		StatePhrases:     []string{"siguientes pasos", "siguiente paso", "proximos pasos", "proximo paso", "estado actual", "estado del caso", "estado del expediente"},
 		StopWords:        []string{"el", "la", "los", "las", "un", "una", "unos", "unas", "y", "o", "u", "de", "del", "al", "a", "en", "con", "por", "para", "sin", "sobre", "es", "son", "era", "fue", "ser", "estar", "esta", "este", "esto", "estos", "estas", "ese", "esa", "eso", "lo", "le", "les", "se", "su", "sus", "mi", "mis", "tu", "tus", "que", "muy", "mas", "pero", "si", "no", "ya", "hay", "me", "te", "nos", "os", "ha", "han", "he"},
 		PageWords:        []string{"pagina", "paginas", "pag", "p"},
 		Months:           [12][]string{{"enero", "ene"}, {"febrero", "feb"}, {"marzo", "mar"}, {"abril", "abr"}, {"mayo", "may"}, {"junio", "jun"}, {"julio", "jul"}, {"agosto", "ago"}, {"septiembre", "setiembre", "sep", "sept"}, {"octubre", "oct"}, {"noviembre", "nov"}, {"diciembre", "dic"}},
@@ -92,7 +87,6 @@ var All = []Language{
 		ChatFileAttached: []string{"fichier joint"},
 		Reply:            [2]string{"Le", "a écrit"},
 		LatestWords:      []string{"dernier", "derniere", "derniers", "recent", "recente"},
-		StatePhrases:     []string{"prochaines etapes", "prochaine etape", "etat actuel", "etat du dossier", "ou en est"},
 		StopWords:        []string{"le", "la", "les", "un", "une", "des", "et", "ou", "de", "du", "au", "aux", "a", "en", "dans", "sur", "par", "pour", "avec", "sans", "est", "sont", "etait", "etre", "ce", "cet", "cette", "ces", "se", "sa", "son", "ses", "mon", "ma", "mes", "ton", "ta", "tes", "que", "qui", "ou", "ne", "pas", "plus", "mais", "si", "il", "elle", "ils", "elles", "nous", "vous", "je", "tu", "on", "y"},
 		PageWords:        []string{"page", "pages", "p"},
 		Months:           [12][]string{{"janvier", "janv"}, {"fevrier", "fevr", "fev"}, {"mars"}, {"avril", "avr"}, {"mai"}, {"juin"}, {"juillet", "juil"}, {"aout"}, {"septembre", "sept"}, {"octobre", "oct"}, {"novembre", "nov"}, {"decembre", "dec"}}, //nolint:misspell // French "decembre" is "décembre" without the accent.
@@ -107,7 +101,6 @@ var All = []Language{
 		ChatFileAttached: []string{"arquivo anexado", "ficheiro anexado"},
 		Reply:            [2]string{"Em", "escreveu"},
 		LatestWords:      []string{"ultimo", "ultima", "ultimos", "recente", "recentes"},
-		StatePhrases:     []string{"proximos passos", "proximo passo", "estado atual", "situacao atual", "estado do processo"},
 		StopWords:        []string{"o", "a", "os", "as", "um", "uma", "uns", "umas", "e", "ou", "de", "do", "da", "dos", "das", "ao", "aos", "em", "no", "na", "nos", "nas", "por", "para", "com", "sem", "sobre", "e", "sao", "era", "foi", "ser", "estar", "este", "esta", "isto", "esse", "essa", "isso", "se", "seu", "sua", "seus", "suas", "meu", "minha", "que", "muito", "mais", "mas", "sim", "nao", "ja", "ha", "me", "te", "lhe"},
 		PageWords:        []string{"pagina", "paginas", "pag", "p"},
 		Months:           [12][]string{{"janeiro", "jan"}, {"fevereiro", "fev"}, {"marco", "mar"}, {"abril", "abr"}, {"maio", "mai"}, {"junho", "jun"}, {"julho", "jul"}, {"agosto", "ago"}, {"setembro", "set"}, {"outubro", "out"}, {"novembro", "nov"}, {"dezembro", "dez"}},
@@ -231,19 +224,11 @@ func Pages(text string) []int {
 }
 
 // AsksLatest reports whether a text asks for the newest documents, in any
-// supported language: "el último correo", "the latest email", or how the
-// case stands now: "¿cuáles son los siguientes pasos?".
+// supported language: "el último correo", "the latest email".
 func AsksLatest(text string) bool {
-	words := strings.FieldsFunc(strings.ToLower(fold(text)), func(r rune) bool { return !unicode.IsLetter(r) })
-	joined := " " + strings.Join(words, " ") + " "
-	for _, l := range All {
-		for _, w := range words {
+	for _, w := range strings.FieldsFunc(strings.ToLower(fold(text)), func(r rune) bool { return !unicode.IsLetter(r) }) {
+		for _, l := range All {
 			if slices.Contains(l.LatestWords, w) {
-				return true
-			}
-		}
-		for _, p := range l.StatePhrases {
-			if strings.Contains(joined, " "+p+" ") {
 				return true
 			}
 		}
