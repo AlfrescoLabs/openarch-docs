@@ -39,6 +39,18 @@ The agent needs a model that makes tool calls well. `PROFILE=large` (the default
 
 ## The sample case
 
-`sample/` is synthetic: a forwarded email with a scanned plan, a WhatsApp export with a photo of a meter room, and an example law text in `references/`. The email and the chat disagree on the building entrance, so a good note reports the conflict.
+`sample/` is synthetic: a forwarded email with a scanned plan, an email thread with quoted replies, a WhatsApp export with a photo of a meter room, and an example law text in `references/`. The email and the chat disagree on the building entrance, so a good note reports the conflict.
 
 The vision model and the agent can be wrong. Check important facts in the cited files.
+
+## Check answer quality
+
+`eval.sh` asks the questions in `sample/questions.txt` with `openarch docs ask` and scores the answers, as a regression check after a change to search or ask. It needs no agent and no tool calls.
+
+```
+./eval.sh                     # large profile
+PROFILE=small ./eval.sh
+./eval.sh --expand --rerank   # measure an optional retrieval step
+```
+
+It writes `eval-report.json` in the current folder and prints the totals: keyword checks (pass, partial, fail) and the judge score. Each question has `F:` lines with its key facts, and the judge model checks each one. Compare the totals with an earlier report: one point up or down is often model noise.

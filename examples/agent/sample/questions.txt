@@ -1,0 +1,60 @@
+# Questions about the synthetic sample case, for openarch docs eval.
+# E: expected words, N: forbidden words, F: key facts for the judge.
+
+Q: ¿Quién envió el plano de la centralización y cuándo?
+E: instalador; 29/10 | 29 de octubre | 2026-10-29
+F: El instalador (Instalador Ejemplo) envió el plano.
+F: Lo envió por correo el 29/10/2026.
+F: El cliente reenvió ese correo el 03/11/2026.
+
+Q: ¿Dónde está el plano de la centralización?
+E: plano-centralizacion; Fwd: Plano de la centralizacion | Plano de la centralizacion
+F: Es el adjunto plano-centralizacion.pdf.
+F: Está en el correo "Fwd: Plano de la centralizacion".
+
+Q: ¿Qué portal dice la distribuidora y qué portal dice el instalador?
+E: portal 1; portal 3
+F: Según la distribuidora, la centralización concedida es la del portal 1.
+F: El instalador dice que es el portal 3.
+
+Q: ¿Quién envió la foto del cuarto de contadores y cuándo?
+E: instalador; WhatsApp | chat; 10/9 | 10/09 | 10 de septiembre | 2026-09-10
+F: La envió el instalador (Instalador Ejemplo) por WhatsApp.
+F: La envió el 10/09/2026 a las 18:10.
+
+Q: ¿En qué portal y planta está el cuarto de contadores de la foto?
+E: portal 3; sótano -2 | sotano -2
+F: El instalador dice en el chat que es el cuarto del portal 3.
+F: Está en el sótano -2.
+
+Q: ¿Qué hace falta para instalar un punto de recarga en mi plaza de garaje?
+E: comunicación previa | comunicacion previa | previamente; comunidad
+F: Solo hace falta comunicación previa a la comunidad de propietarios.
+F: Lo dice el artículo 1 del texto de referencia.
+
+Q: ¿Quién fija el punto de conexión?
+E: distribuidora; solicitud
+F: Lo fija la empresa distribuidora.
+F: Lo fija según la centralización de contadores que figura en la solicitud.
+
+Q: ¿Quién hizo las fotos de la página 2 de la solicitud?
+E: técnico | tecnico; distribuidora
+N: las hizo el instalador
+F: Las hizo el técnico de la distribuidora en su visita del 20 de octubre.
+F: Lo dice el instalador en su correo del 04/11/2026.
+F: El instalador dice que no las hizo él.
+
+Q: ¿Quién preguntó si el instalador hizo las fotos de la solicitud?
+E: cliente; 4/11 | 04/11 | 4 de noviembre | 2026-11-04
+N: el asesor preguntó
+F: Lo preguntó el cliente (Cliente Ejemplo).
+F: Lo preguntó por correo el 04/11/2026.
+
+Q: ¿Qué va a pedir el asesor a la distribuidora?
+E: fecha; visita
+F: El asesor va a pedir la fecha de la visita del técnico de la distribuidora.
+
+Q: ¿Cuánto costó la instalación del punto de recarga?
+E: no dicen | no indican | no mencionan | no consta | no aparece | no hay | no se menciona | no se indica
+N: euros; EUR
+F: Las fuentes no dicen el coste de la instalación.

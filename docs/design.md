@@ -148,7 +148,7 @@ The plugin talks to OpenArch only by running `openarch ... --output json --non-i
 
 The Agent Skill `skills/openarch-docs/SKILL.md` is embedded in the binary; `skill install` writes it to `<dir>/.claude/skills/openarch-docs/SKILL.md` (default: the case folder; hidden folders are never originals) and replaces a changed file only with `--force`.
 
-`examples/agent` runs Docker Agent with the MCP server as its only toolset and `skills: true`, on a synthetic sample case, and checks the folder after the run.
+`examples/agent` runs Docker Agent with the MCP server as its only toolset and `skills: true`, on a synthetic sample case, and checks the folder after the run. `examples/agent/eval.sh` runs `eval` on the same sample case with `sample/questions.txt` (key facts in `F:` lines), as a regression check of answer quality.
 
 ## Init, add, status and collect
 
