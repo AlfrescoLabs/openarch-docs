@@ -32,6 +32,9 @@ type Question struct {
 	Skip string `json:"skip,omitempty"`
 	// Reference is a correct answer, for the judge model.
 	Reference string `json:"reference,omitempty"`
+	// Facts are the key facts a right answer states. With facts, the judge
+	// checks each one; without, it lists the facts of Reference itself.
+	Facts []string `json:"facts,omitempty"`
 }
 
 // Parse reads a question set:
@@ -42,6 +45,7 @@ type Question struct {
 //	N: word that must not appear
 //	S: reason to skip
 //	A: a correct answer, for the judge model
+//	F: a key fact of a right answer (one per line)
 //
 // Each Q starts a question. Words are compared in lower case, without accents.
 func Parse(r io.Reader) ([]Question, error) {
@@ -56,7 +60,7 @@ func Parse(r io.Reader) ([]Question, error) {
 		}
 		key, value, ok := strings.Cut(line, ":")
 		if !ok || len(key) != 1 {
-			return nil, fmt.Errorf("line %d: want a line that starts with Q, E, N or S and a colon", n)
+			return nil, fmt.Errorf("line %d: want a line that starts with Q, E, N, S, A or F and a colon", n)
 		}
 		value = strings.TrimSpace(value)
 		if key == "Q" {
@@ -90,6 +94,10 @@ func Parse(r io.Reader) ([]Question, error) {
 			q.Skip = value
 		case "A":
 			q.Reference = strings.TrimSpace(q.Reference + " " + value)
+		case "F":
+			if value != "" {
+				q.Facts = append(q.Facts, value)
+			}
 		default:
 			return nil, fmt.Errorf("line %d: unknown key %q", n, key)
 		}
@@ -164,6 +172,22 @@ Reference answer: %s
 
 Answer to check: %s`
 
+// factsPrompt asks the judge to check fixed key facts, written by hand.
+// The judge does not choose the facts, so its scores are steadier.
+const factsPrompt = `You check an answer to a question about a case file against a list of key facts that are correct.
+
+For each fact, say if the answer states it (same meaning, other words are fine), and if the answer says something that contradicts it. Keep the facts in the same order and with the same words.
+
+Reply with JSON only, in this form:
+{"facts": [{"fact": "...", "stated": true, "contradicted": false}]}
+
+Question: %s
+
+Key facts:
+%s
+
+Answer to check: %s`
+
 // judgment is the reply of the judge.
 type judgment struct {
 	Facts []struct {
@@ -175,8 +199,9 @@ type judgment struct {
 
 // judgeScore turns a judge reply into a score: 0 with any contradiction, 2
 // with at least 80% of the key facts stated, 1 with at least 40%, else 0. It
-// returns -1 for a reply that is not a judgment.
-func judgeScore(reply string) (int, []string) {
+// returns -1 for a reply that is not a judgment. With want facts, the judge
+// must check all of them: a fact it leaves out counts as not stated.
+func judgeScore(reply string, want []string) (int, []string) {
 	start, end := strings.Index(reply, "{"), strings.LastIndex(reply, "}")
 	if start < 0 || end < start {
 		return -1, nil
@@ -197,10 +222,11 @@ func judgeScore(reply string) (int, []string) {
 			missed = append(missed, f.Fact)
 		}
 	}
+	total := max(len(j.Facts), len(want))
 	switch {
-	case 5*stated >= 4*len(j.Facts):
+	case 5*stated >= 4*total:
 		return 2, missed
-	case 5*stated >= 2*len(j.Facts):
+	case 5*stated >= 2*total:
 		return 1, missed
 	}
 	return 0, missed
@@ -257,14 +283,18 @@ func Run(ctx context.Context, qs []Question, opts Options) (*Report, error) {
 
 // judge scores one answer against its reference, when there is a judge.
 func judge(ctx context.Context, opts Options, r *Result, rep *Report) error {
-	if opts.Judge == nil || r.Reference == "" || r.Answer == "" {
+	if opts.Judge == nil || (r.Reference == "" && len(r.Facts) == 0) || r.Answer == "" {
 		return nil
+	}
+	prompt := fmt.Sprintf(judgePrompt, r.Text, r.Reference, r.Answer)
+	if len(r.Facts) > 0 {
+		prompt = fmt.Sprintf(factsPrompt, r.Text, "- "+strings.Join(r.Facts, "\n- "), r.Answer)
 	}
 	maxTokens := 1200
 	if opts.JudgeThink {
 		maxTokens = 16000
 	}
-	reply, err := opts.Judge.Chat(ctx, opts.JudgeModel, []models.Message{{Role: "user", Content: fmt.Sprintf(judgePrompt, r.Text, r.Reference, r.Answer)}},
+	reply, err := opts.Judge.Chat(ctx, opts.JudgeModel, []models.Message{{Role: "user", Content: prompt}},
 		models.ChatOptions{Temperature: 0, Seed: 42, MaxTokens: maxTokens, Think: opts.JudgeThink})
 	if errors.Is(err, models.ErrNoAnswer) {
 		// No score for this answer; the others still count.
@@ -273,7 +303,7 @@ func judge(ctx context.Context, opts Options, r *Result, rep *Report) error {
 	if err != nil {
 		return err
 	}
-	r.Judge, r.JudgeMissed = judgeScore(reply)
+	r.Judge, r.JudgeMissed = judgeScore(reply, r.Facts)
 	if r.Judge >= 0 {
 		rep.JudgeScore += r.Judge
 		rep.JudgeMax += 2
@@ -284,15 +314,15 @@ func judge(ctx context.Context, opts Options, r *Result, rep *Report) error {
 // Rejudge scores the answers of a report again, without asking again: to
 // compare judges, or to judge a report made with --no-judge.
 func Rejudge(ctx context.Context, old *Report, qs []Question, opts Options) (*Report, error) {
-	refs := map[string]string{}
+	byText := map[string]Question{}
 	for _, q := range qs {
-		refs[q.Text] = q.Reference
+		byText[q.Text] = q
 	}
 	rep := &Report{Model: old.Model, Results: []Result{}, Pass: old.Pass, Partial: old.Partial, Fail: old.Fail, Skip: old.Skip}
 	for _, r := range old.Results {
 		r.Judge, r.JudgeMissed = -1, nil
-		if ref, ok := refs[r.Text]; ok {
-			r.Reference = ref
+		if q, ok := byText[r.Text]; ok {
+			r.Reference, r.Facts = q.Reference, q.Facts
 		}
 		if err := judge(ctx, opts, &r, rep); err != nil {
 			return nil, err

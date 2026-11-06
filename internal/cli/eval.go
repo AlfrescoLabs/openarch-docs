@@ -72,12 +72,14 @@ The file has one block per question:
   N: cliente                          (words that must not appear)
   S: needs the web                    (skip the question, with the reason)
   A: El instalador, por correo.       (a correct answer, for the judge model)
+  F: Lo envió el instalador.          (a key fact, one per line, for the judge)
 
 Words are compared in lower case, without accents. An answer passes with
 every group, is partial with at least half, and fails with less, or with a
-forbidden word. With A: lines, the chat model of the profile also judges each
-answer against the reference (--judge-model, the chat model of the large
-profile by default): 2 right, 1 partly right, 0 wrong. Keep a question file of a private case out of any repository.`,
+forbidden word. With A: or F: lines, a judge model also scores each answer
+(--judge-model, the chat model of the large profile by default): 2 right,
+1 partly right, 0 wrong. With F: lines it checks each fact; with only an
+A: line it lists the key facts of the reference itself, which is less steady. Keep a question file of a private case out of any repository.`,
 		Example: `  openarch docs eval ~/cases/garage-questions.txt
   openarch docs eval questions.txt --profile small --output json > report.json`,
 		Args: cobra.ExactArgs(1),
