@@ -220,6 +220,7 @@ Rules:
 - When the question asks where a document is, give its file name and its path from the source.
 - "Last" or "latest" means the newest date among the sources.
 - When a fact comes from an email or a chat, say who wrote it. Never write "we" or "us" for a writer.
+- The sender of a source is its writer. A greeting such as "Hola Ana" or "Dear Ana" names the reader, not the writer.
 
 Format: 1 to 5 plain sentences that answer the question. Put the source numbers after each sentence, like "The meter room is in the basement [3]."`
 
@@ -254,29 +255,31 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		res.Answer = "The index has no text for this question. Run 'openarch docs index', or add the documents that hold the answer."
 		return res, nil
 	}
-	// Pieces of the same file become one source, in rank order.
+	// Pieces of the same message become one source, in rank order. A thread
+	// file holds many quoted messages; each keeps its own sender and date.
 	type group struct {
 		hit    index.Hit
 		chunks []index.Hit
 		texts  []string
 	}
 	var groups []*group
-	byPath := map[string]*group{}
+	byMessage := map[string]*group{}
 	seenChunk := map[int64]bool{}
 	for _, h := range hits {
 		if seenChunk[h.ID] {
 			continue
 		}
 		seenChunk[h.ID] = true
-		g, ok := byPath[h.Path]
+		key := h.Path + "\x00" + h.Cite
+		g, ok := byMessage[key]
 		if !ok {
 			g = &group{hit: h}
-			byPath[h.Path] = g
+			byMessage[key] = g
 			groups = append(groups, g)
 		}
 		g.chunks = append(g.chunks, h)
 	}
-	// The pieces of a file are read in file order.
+	// The pieces of a message are read in file order.
 	for _, g := range groups {
 		slices.SortFunc(g.chunks, func(a, b index.Hit) int { return cmp.Compare(a.ID, b.ID) })
 		for _, c := range g.chunks {

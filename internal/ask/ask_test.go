@@ -200,3 +200,42 @@ func TestCitations(t *testing.T) {
 		t.Errorf("cited %v unknown %v", cited, unknown)
 	}
 }
+
+// A thread file quotes messages from other people: each message is its own
+// source with its own sender, so the model does not take a quoted writer
+// for the writer of the email.
+func TestSourcePerMessage(t *testing.T) {
+	root := t.TempDir()
+	thread := "From: Ana <ana@example.com>\nTo: Luis <luis@example.org>\nSubject: Re: Plano\nDate: Fri, 31 Oct 2026 09:00:00 +0100\n\n" +
+		"Hola Luis, el plano del sotano esta bien.\n\n" +
+		"El jue, 30 oct 2026 a las 18:00, Luis <luis@example.org> escribió:\n" +
+		"> Hola Ana, te envio el plano del sotano con la centralizacion.\n"
+	if err := os.WriteFile(filepath.Join(root, "hilo.eml"), []byte(thread), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ingest.Run(ingest.Options{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	x, err := index.Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = x.Close() })
+	if _, err := x.Build(context.Background(), index.BuildOptions{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	chat := &fakeChat{answers: []string{"Luis envió el plano [2]."}}
+	res, err := Run(context.Background(), Options{Question: "plano sotano", Index: x, Chat: chat, ChatModel: "m", NoNotes: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Sources) != 2 {
+		t.Fatalf("sources = %+v", res.Sources)
+	}
+	prompt, _ := chat.messages[1].Content.(string)
+	for _, want := range []string{`sender="Ana (ana@example.com)"`, `sender="Luis (luis@example.org)"`} {
+		if strings.Count(prompt, want) != 1 {
+			t.Errorf("prompt has %q %d times:\n%s", want, strings.Count(prompt, want), prompt)
+		}
+	}
+}
