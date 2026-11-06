@@ -73,6 +73,7 @@ The file has one block per question:
   S: needs the web                    (skip the question, with the reason)
   A: El instalador, por correo.       (a correct answer, for the judge model)
   F: Lo envió el instalador.          (a key fact, one per line, for the judge)
+  P: ¿Quién envió la foto?            (an earlier question: Q is its follow-up)
 
 Words are compared in lower case, without accents. An answer passes with
 every group, is partial with at least half, and fails with less, or with a

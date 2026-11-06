@@ -1,5 +1,6 @@
 # Questions about the synthetic sample case, for openarch docs eval.
-# E: expected words, N: forbidden words, F: key facts for the judge.
+# E: expected words, N: forbidden words, F: key facts for the judge,
+# P: an earlier question of the same conversation.
 
 Q: ¿Quién envió el plano de la centralización y cuándo?
 E: instalador; 29/10 | 29 de octubre | 2026-10-29
@@ -58,3 +59,16 @@ Q: ¿Cuánto costó la instalación del punto de recarga?
 E: no dicen | no indican | no mencionan | no consta | no aparece | no hay | no se menciona | no se indica
 N: euros; EUR
 F: Las fuentes no dicen el coste de la instalación.
+
+# Follow-up questions: P: lines are asked first, in the same conversation.
+Q: ¿Y qué portal dijo esa persona?
+P: ¿Quién envió la foto del cuarto de contadores?
+E: portal 3
+F: El instalador dijo que es el portal 3.
+F: Lo dijo en el chat el 10/09/2026.
+
+Q: ¿Y qué le contestó?
+P: ¿Quién preguntó si el instalador hizo las fotos de la solicitud?
+E: técnico | tecnico; distribuidora
+F: El instalador contestó que no hizo las fotos.
+F: Dijo que las hizo el técnico de la distribuidora.

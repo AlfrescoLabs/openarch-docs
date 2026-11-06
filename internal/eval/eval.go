@@ -32,6 +32,9 @@ type Question struct {
 	Skip string `json:"skip,omitempty"`
 	// Reference is a correct answer, for the judge model.
 	Reference string `json:"reference,omitempty"`
+	// Before are earlier questions of the same conversation. They are asked
+	// first, and the question is asked as a follow-up of their answers.
+	Before []string `json:"before,omitempty"`
 	// Facts are the key facts a right answer states. With facts, the judge
 	// checks each one; without, it lists the facts of Reference itself.
 	Facts []string `json:"facts,omitempty"`
@@ -46,6 +49,7 @@ type Question struct {
 //	S: reason to skip
 //	A: a correct answer, for the judge model
 //	F: a key fact of a right answer (one per line)
+//	P: an earlier question of the conversation (one per line, in order)
 //
 // Each Q starts a question. Words are compared in lower case, without accents.
 func Parse(r io.Reader) ([]Question, error) {
@@ -60,7 +64,7 @@ func Parse(r io.Reader) ([]Question, error) {
 		}
 		key, value, ok := strings.Cut(line, ":")
 		if !ok || len(key) != 1 {
-			return nil, fmt.Errorf("line %d: want a line that starts with Q, E, N, S, A or F and a colon", n)
+			return nil, fmt.Errorf("line %d: want a line that starts with Q, E, N, S, A, F or P and a colon", n)
 		}
 		value = strings.TrimSpace(value)
 		if key == "Q" {
@@ -97,6 +101,10 @@ func Parse(r io.Reader) ([]Question, error) {
 		case "F":
 			if value != "" {
 				q.Facts = append(q.Facts, value)
+			}
+		case "P":
+			if value != "" {
+				q.Before = append(q.Before, value)
 			}
 		default:
 			return nil, fmt.Errorf("line %d: unknown key %q", n, key)
@@ -246,10 +254,8 @@ func Run(ctx context.Context, qs []Question, opts Options) (*Report, error) {
 		if opts.Progress != nil {
 			_, _ = fmt.Fprintf(opts.Progress, "[%d/%d] %s\n", i+1, len(qs), q.Text)
 		}
-		o := opts.Ask
-		o.Question = q.Text
 		start := time.Now()
-		res, err := ask.Run(ctx, o)
+		res, err := askInConversation(ctx, opts.Ask, q)
 		r.Seconds = float64(time.Since(start).Milliseconds()) / 1000
 		if err != nil {
 			if ctx.Err() != nil {
@@ -279,6 +285,22 @@ func Run(ctx context.Context, qs []Question, opts Options) (*Report, error) {
 		rep.Results = append(rep.Results, r)
 	}
 	return rep, nil
+}
+
+// askInConversation asks the earlier questions of q first, then q as their
+// follow-up.
+func askInConversation(ctx context.Context, o ask.Options, q Question) (*ask.Result, error) {
+	var history []ask.Turn
+	for _, b := range q.Before {
+		o.Question, o.History = b, history
+		res, err := ask.Run(ctx, o)
+		if err != nil {
+			return nil, fmt.Errorf("earlier question %q: %w", b, err)
+		}
+		history = append(history, ask.Turn{Question: b, Answer: res.Answer})
+	}
+	o.Question, o.History = q.Text, history
+	return ask.Run(ctx, o)
 }
 
 // judge scores one answer against its reference, when there is a judge.

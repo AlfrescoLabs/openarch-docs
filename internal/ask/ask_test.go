@@ -2,6 +2,7 @@ package ask
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,6 +19,7 @@ type fakeChat struct {
 	answers          []string
 	calls            int
 	expands, reranks int
+	rewrites         int
 	messages         []models.Message
 }
 
@@ -31,6 +33,9 @@ func (f *fakeChat) Chat(_ context.Context, _ string, messages []models.Message, 
 		case strings.Contains(text, "Which passages hold facts"):
 			f.reranks++
 			return "2, 1", nil
+		case strings.Contains(text, "Rewrite the new question"):
+			f.rewrites++
+			return "\"¿Dónde está la centralización del sotano?\"\n", nil
 		}
 	}
 	f.messages = messages
@@ -237,5 +242,68 @@ func TestSourcePerMessage(t *testing.T) {
 		if strings.Count(prompt, want) != 1 {
 			t.Errorf("prompt has %q %d times:\n%s", want, strings.Count(prompt, want), prompt)
 		}
+	}
+}
+
+func TestFollowUp(t *testing.T) {
+	x := newIndex(t)
+	chat := &fakeChat{answers: []string{"Está en el sótano -2 [1]."}}
+	history := []Turn{{Question: "¿Quién envió el plano?", Answer: "Ana lo envió [1]."}}
+	res, err := Run(context.Background(), Options{Question: "¿Y dónde está?", History: history, Index: x, Chat: chat, ChatModel: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if chat.rewrites != 1 || res.Question != "¿Y dónde está?" || res.Standalone != "¿Dónde está la centralización del sotano?" {
+		t.Errorf("rewrites %d, question %q, standalone %q", chat.rewrites, res.Question, res.Standalone)
+	}
+	// The earlier turn goes to the model before the sources.
+	if len(chat.messages) != 4 || chat.messages[1].Content != "¿Quién envió el plano?" || chat.messages[2].Role != "assistant" {
+		t.Errorf("messages = %+v", chat.messages)
+	}
+	if len(res.Sources) == 0 {
+		t.Error("no sources for the standalone question")
+	}
+
+	chat = &fakeChat{answers: []string{"Está en el sótano -2 [1]."}}
+	res, err = Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m"})
+	if err != nil || chat.rewrites != 0 || res.Standalone != "" || len(chat.messages) != 2 {
+		t.Errorf("without history: rewrites %d, standalone %q, %d messages, %v", chat.rewrites, res.Standalone, len(chat.messages), err)
+	}
+}
+
+func TestLastTurns(t *testing.T) {
+	h := []Turn{{Question: "1"}, {Question: "2"}, {Question: "3"}, {Question: "4"}}
+	if got := lastTurns(h); len(got) != maxTurns || got[0].Question != "2" {
+		t.Errorf("lastTurns = %+v", got)
+	}
+	if got := lastTurns(h[:1]); len(got) != 1 {
+		t.Errorf("lastTurns of one = %+v", got)
+	}
+}
+
+func TestHistoryFile(t *testing.T) {
+	root := t.TempDir()
+	if h, err := LoadHistory(root); err != nil || h != nil {
+		t.Fatalf("LoadHistory without a file = %v, %v", h, err)
+	}
+	var turns []Turn
+	for i := range keepTurns + 2 {
+		turns = append(turns, Turn{Question: fmt.Sprint(i), Answer: "a <b>"})
+	}
+	if err := SaveHistory(root, turns); err != nil {
+		t.Fatal(err)
+	}
+	h, err := LoadHistory(root)
+	if err != nil || len(h) != keepTurns || h[0].Question != "2" || h[0].Answer != "a <b>" {
+		t.Fatalf("LoadHistory = %+v, %v", h, err)
+	}
+	if err := ClearHistory(root); err != nil {
+		t.Fatal(err)
+	}
+	if h, _ := LoadHistory(root); h != nil {
+		t.Errorf("history after clear = %+v", h)
+	}
+	if err := ClearHistory(root); err != nil {
+		t.Errorf("clear twice: %v", err)
 	}
 }

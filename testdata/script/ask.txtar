@@ -5,6 +5,12 @@ exec openarch-docs index --no-embed --case case
 ! exec openarch-docs ask --case case --model-url http://127.0.0.1:9 donde esta el sotano
 stderr 'docker desktop enable model-runner'
 
+# A failed question is not kept in the conversation.
+! exec openarch-docs ask --case case --model-url http://127.0.0.1:9 --new donde esta el sotano
+! exists case/.ask/history.json
+! exec openarch-docs ask --case case --continue --new donde esta
+stderr 'none of the others can be'
+
 # timeline needs no model.
 exec openarch-docs timeline --case case
 stdout '^2026-10-29T18:00  forwarded  Instalador <instalador@example.net>: Plano$'

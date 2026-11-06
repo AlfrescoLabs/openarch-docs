@@ -17,6 +17,11 @@ import (
 type askResult struct{ *ask.Result }
 
 func (r askResult) WriteText(w io.Writer) error {
+	if r.Standalone != "" {
+		if _, err := fmt.Fprintf(w, "Question: %s\n\n", r.Standalone); err != nil {
+			return err
+		}
+	}
 	if _, err := fmt.Fprintf(w, "%s\n\nSources:\n", r.Answer); err != nil {
 		return err
 	}
@@ -54,7 +59,7 @@ func newAskCmd(app *App) *cobra.Command {
 	var (
 		limit                          int
 		noNotes, expand, rerank, neigh bool
-		think                          bool
+		think, cont, fresh             bool
 	)
 	cmd := &cobra.Command{
 		Use:   "ask <question>",
@@ -73,6 +78,13 @@ as [n]. The model makes no tool calls, so small models work.
 --neighbors adds the pieces around each one. They are off by default: on a
 real case they added little and made answers about 3 times slower.
 
+--continue makes the question part of a conversation: the model reads the
+last 3 questions and answers, and first writes the question so that it
+stands alone ("¿Y qué portal dijo esa persona?" becomes a question with the
+name), which search uses. The conversation is kept in .ask/history.json in
+the case folder. --new starts a new conversation. Without --continue or
+--new, each question stands alone.
+
 The answer lists the sources, marks the cited ones, and warns when the model
 cites a number that is not a source. Always check important facts in the
 cited files.
@@ -80,7 +92,9 @@ cited files.
 Run index first.`,
 		Example: `  openarch docs ask "¿Quién aportó las fotos de la solicitud?"
   openarch docs ask "What does the law say about charging points?" --limit 12
-  openarch docs ask "Qual é o estado do pedido?" --no-notes --output json`,
+  openarch docs ask "Qual é o estado do pedido?" --no-notes --output json
+  openarch docs ask --new "¿Quién envió la foto del cuarto de contadores?"
+  openarch docs ask --continue "¿Y qué portal dijo esa persona?"`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := app.caseRoot()
@@ -99,10 +113,21 @@ Run index first.`,
 				return err
 			}
 			defer func() { _ = x.Close() }()
+			var history []ask.Turn
+			if fresh {
+				if err := ask.ClearHistory(root); err != nil {
+					return err
+				}
+			} else if cont {
+				if history, err = ask.LoadHistory(root); err != nil {
+					return output.Usage(err.Error(), "Start a new conversation with --new.")
+				}
+			}
 			client := app.modelClient()
+			question := strings.Join(args, " ")
 			res, err := ask.Run(cmd.Context(), ask.Options{
-				Question: strings.Join(args, " "), Limit: limit, NoNotes: noNotes, Think: think, Expand: expand, Rerank: rerank, Neighbors: neigh, Index: x,
-				Embedder: client, EmbedModel: p.Embed, Chat: client, ChatModel: p.Chat,
+				Question: question, Limit: limit, NoNotes: noNotes, Think: think, Expand: expand, Rerank: rerank, Neighbors: neigh, Index: x,
+				Embedder: client, EmbedModel: p.Embed, Chat: client, ChatModel: p.Chat, History: history,
 			})
 			if errors.Is(err, models.ErrNoAnswer) {
 				return output.NewError(output.ExitRemote, err.Error(), "Ask a shorter question, or run without --think.")
@@ -114,6 +139,11 @@ Run index first.`,
 				}
 				return modelError(err, model)
 			}
+			if cont || fresh {
+				if err := ask.SaveHistory(root, append(history, ask.Turn{Question: question, Answer: res.Answer})); err != nil {
+					return err
+				}
+			}
 			return app.Printer.Print(askResult{res})
 		},
 	}
@@ -122,6 +152,9 @@ Run index first.`,
 	cmd.Flags().BoolVar(&expand, "expand", false, "also search with 3 queries the model writes in other words (slower)")
 	cmd.Flags().BoolVar(&rerank, "rerank", false, "let the model pick the useful passages from 30 candidates (slower)")
 	cmd.Flags().BoolVar(&neigh, "neighbors", false, "add the pieces around each hit")
+	cmd.Flags().BoolVar(&cont, "continue", false, "continue the conversation: read the last questions and answers")
+	cmd.Flags().BoolVar(&fresh, "new", false, "start a new conversation, kept for --continue")
+	cmd.MarkFlagsMutuallyExclusive("continue", "new")
 	cmd.Flags().BoolVar(&think, "think", false, "let models that think before they answer (GLM 4.7 Flash) do so: slower")
 	return cmd
 }

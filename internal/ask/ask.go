@@ -41,13 +41,26 @@ type Options struct {
 	// Rerank lets the model pick the useful candidates.
 	Rerank bool
 	// Neighbors adds the chunks around each hit.
-	Neighbors  bool
+	Neighbors bool
+	// History holds the earlier turns of the conversation, oldest first. With
+	// history, the model first writes the question so that it stands alone,
+	// and the last turns go to the model before the sources.
+	History    []Turn
 	Index      *index.Index
 	Embedder   index.Embedder
 	EmbedModel string
 	Chat       Chatter
 	ChatModel  string
 }
+
+// Turn is one question and its answer in a conversation.
+type Turn struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+}
+
+// maxTurns is the number of earlier turns the model reads.
+const maxTurns = 3
 
 // Source is one numbered source the model read.
 type Source struct {
@@ -61,10 +74,13 @@ type Source struct {
 
 // Result is an answer with its sources.
 type Result struct {
-	Question string   `json:"question"`
-	Answer   string   `json:"answer"`
-	Model    string   `json:"model"`
-	Sources  []Source `json:"sources"`
+	Question string `json:"question"`
+	// Standalone is the question as the model wrote it to stand alone,
+	// when there is history; search used it.
+	Standalone string   `json:"standalone,omitempty"`
+	Answer     string   `json:"answer"`
+	Model      string   `json:"model"`
+	Sources    []Source `json:"sources"`
 	// Cited are the source numbers the answer cites.
 	Cited []int `json:"cited"`
 	// Unknown are numbers the answer cites that are not sources. They mean
@@ -90,6 +106,45 @@ Use other words than the question: the names, places, dates, document names and 
 Write them in %s. Write one query per line, and nothing else.
 
 Question: %s`
+
+// standalonePrompt asks the model to write a follow-up question so that it
+// stands alone. %s is the language, %s the conversation, %s the question.
+const standalonePrompt = `Below is a conversation about a case file and a new question.
+Rewrite the new question so that it can be understood without the conversation: replace words such as "it", "that person", "the email" or "there" with the names, documents, places and dates they mean.
+If the new question already stands alone, write it as it is. Write it in %s. Write only the question, on one line.
+
+Conversation:
+%s
+New question: %s`
+
+// standalone returns the question written to stand alone, from the last turns.
+func standalone(ctx context.Context, opts Options, language string) (string, error) {
+	var b strings.Builder
+	for _, t := range lastTurns(opts.History) {
+		answer := []rune(t.Answer)
+		if len(answer) > 600 {
+			answer = append(answer[:600], '.', '.', '.')
+		}
+		fmt.Fprintf(&b, "User: %s\nAssistant: %s\n", t.Question, string(answer))
+	}
+	reply, err := opts.Chat.Chat(ctx, opts.ChatModel, []models.Message{{Role: "user", Content: fmt.Sprintf(standalonePrompt, language, b.String(), opts.Question)}},
+		models.ChatOptions{Temperature: 0, Seed: 42, MaxTokens: 200})
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(reply, "\n") {
+		line = strings.Trim(strings.TrimSpace(line), `"`)
+		line = strings.TrimSpace(strings.TrimPrefix(line, "New question:"))
+		if line != "" {
+			return line, nil
+		}
+	}
+	return opts.Question, nil
+}
+
+func lastTurns(h []Turn) []Turn {
+	return h[max(0, len(h)-maxTurns):]
+}
 
 // rerankPrompt asks the model to pick the useful passages.
 const rerankPrompt = `Below are numbered passages from a case file, and a question.
@@ -231,6 +286,18 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Limit <= 0 {
 		opts.Limit = 12
 	}
+	asked := opts.Question
+	language := "the language of the question"
+	if l, ok := lang.Detect(asked); ok {
+		language = l.Name
+	}
+	if len(opts.History) > 0 {
+		q, err := standalone(ctx, opts, language)
+		if err != nil {
+			return nil, err
+		}
+		opts.Question = q
+	}
 	hits, err := retrieve(ctx, opts)
 	if err != nil {
 		return nil, err
@@ -252,7 +319,10 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		}
 		hits = append(latest, hits...)
 	}
-	res := &Result{Question: opts.Question, Model: opts.ChatModel, Sources: []Source{}, Cited: []int{}, Unknown: []int{}, Checks: []Check{}}
+	res := &Result{Question: asked, Model: opts.ChatModel, Sources: []Source{}, Cited: []int{}, Unknown: []int{}, Checks: []Check{}}
+	if len(opts.History) > 0 {
+		res.Standalone = opts.Question
+	}
 	if len(hits) == 0 {
 		res.Answer = "The index has no text for this question. Run 'openarch docs index', or add the documents that hold the answer."
 		return res, nil
@@ -315,13 +385,14 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	fmt.Fprintf(&b, "Question: %s", opts.Question)
 	// Models often answer in English when told to use "the language of the
 	// question", so name the language.
-	if l, ok := lang.Detect(opts.Question); ok {
+	if l, ok := lang.Detect(asked); ok {
 		fmt.Fprintf(&b, "\n\nAnswer in %s.", l.Name)
 	}
-	messages := []models.Message{
-		{Role: "system", Content: instruction},
-		{Role: "user", Content: b.String()},
+	messages := []models.Message{{Role: "system", Content: instruction}}
+	for _, t := range lastTurns(opts.History) {
+		messages = append(messages, models.Message{Role: "user", Content: t.Question}, models.Message{Role: "assistant", Content: t.Answer})
 	}
+	messages = append(messages, models.Message{Role: "user", Content: b.String()})
 	// Temperature 0 and a fixed seed: the same question on the same case gives
 	// the same answer, so runs can be compared.
 	chatOpts := models.ChatOptions{Temperature: 0, Seed: 42, MaxTokens: 2048, Think: opts.Think}
