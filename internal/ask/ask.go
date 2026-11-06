@@ -36,17 +36,17 @@ type Options struct {
 	NoNotes bool
 	// Think lets the model think before it answers: slower, sometimes better.
 	Think bool
-	// NoExpand skips the extra search queries the model writes.
-	NoExpand bool
-	// NoRerank skips the step where the model picks the useful candidates.
-	NoRerank bool
-	// NoNeighbors skips the chunks around each hit.
-	NoNeighbors bool
-	Index       *index.Index
-	Embedder    index.Embedder
-	EmbedModel  string
-	Chat        Chatter
-	ChatModel   string
+	// Expand also searches with queries the model writes in other words.
+	Expand bool
+	// Rerank lets the model pick the useful candidates.
+	Rerank bool
+	// Neighbors adds the chunks around each hit.
+	Neighbors  bool
+	Index      *index.Index
+	Embedder   index.Embedder
+	EmbedModel string
+	Chat       Chatter
+	ChatModel  string
 }
 
 // Source is one numbered source the model read.
@@ -100,8 +100,8 @@ Reply with their numbers only, the most useful first, at most %d, separated by c
 Question: %s`
 
 // retrieve finds the chunks for a question: search with the question and,
-// unless turned off, with queries the model writes; then the model picks the
-// useful candidates; then each pick brings its neighbors.
+// when turned on, with queries the model writes; then the model picks the
+// useful candidates and each pick brings its neighbors, when turned on.
 func retrieve(ctx context.Context, opts Options) ([]index.Hit, error) {
 	queries := []string{opts.Question}
 	language := "the language of the question"
@@ -109,7 +109,7 @@ func retrieve(ctx context.Context, opts Options) ([]index.Hit, error) {
 		language = l.Name
 	}
 	small := models.ChatOptions{Temperature: 0, Seed: 42, MaxTokens: 300}
-	if !opts.NoExpand {
+	if opts.Expand {
 		reply, err := opts.Chat.Chat(ctx, opts.ChatModel, []models.Message{{Role: "user", Content: fmt.Sprintf(expandPrompt, language, opts.Question)}}, small)
 		if err != nil {
 			return nil, err
@@ -154,7 +154,7 @@ func retrieve(ctx context.Context, opts Options) ([]index.Hit, error) {
 		cands = cands[:candidates]
 	}
 	picked := cands
-	if !opts.NoRerank && len(cands) > opts.Limit {
+	if opts.Rerank && len(cands) > opts.Limit {
 		var b strings.Builder
 		for i, h := range cands {
 			text := strings.Join(strings.Fields(h.Text), " ")
@@ -189,7 +189,7 @@ func retrieve(ctx context.Context, opts Options) ([]index.Hit, error) {
 	if len(picked) > opts.Limit {
 		picked = picked[:opts.Limit]
 	}
-	if opts.NoNeighbors {
+	if !opts.Neighbors {
 		return picked, nil
 	}
 	out := slices.Clone(picked)

@@ -106,7 +106,7 @@ func TestRun(t *testing.T) {
 func TestRunNoHits(t *testing.T) {
 	x := newIndex(t)
 	chat := &fakeChat{answers: []string{"x"}}
-	res, err := Run(context.Background(), Options{Question: "zzzz", Index: x, Chat: chat, ChatModel: "m", NoExpand: true})
+	res, err := Run(context.Background(), Options{Question: "zzzz", Index: x, Chat: chat, ChatModel: "m"})
 	if err != nil || len(res.Sources) != 0 || chat.messages != nil || !strings.Contains(res.Answer, "no text") {
 		t.Errorf("no hits = %+v, %v", res, err)
 	}
@@ -171,7 +171,7 @@ func TestCheckCitations(t *testing.T) {
 func TestRetrieveSteps(t *testing.T) {
 	x := newIndex(t)
 	chat := &fakeChat{answers: []string{"Está en el sótano -2 [1]."}}
-	if _, err := Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m"}); err != nil {
+	if _, err := Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m", Expand: true, Rerank: true}); err != nil {
 		t.Fatal(err)
 	}
 	// Few candidates: no rerank is needed.
@@ -179,14 +179,14 @@ func TestRetrieveSteps(t *testing.T) {
 		t.Errorf("expands %d, reranks %d", chat.expands, chat.reranks)
 	}
 	chat = &fakeChat{answers: []string{"x [1]."}}
-	if _, err := Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m", Limit: 1}); err != nil {
+	if _, err := Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m", Limit: 1, Expand: true, Rerank: true}); err != nil {
 		t.Fatal(err)
 	}
 	if chat.reranks != 1 {
 		t.Errorf("reranks %d with more candidates than the limit", chat.reranks)
 	}
 	chat = &fakeChat{answers: []string{"x [1]."}}
-	if _, err := Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m", Limit: 1, NoExpand: true, NoRerank: true}); err != nil {
+	if _, err := Run(context.Background(), Options{Question: "sotano", Index: x, Chat: chat, ChatModel: "m", Limit: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if chat.expands != 0 || chat.reranks != 0 {
