@@ -1,0 +1,16 @@
+# --rejudge reads only the report and the questions: no case folder needed.
+exec openarch-docs eval --no-judge --rejudge report.json questions.txt -o json
+stdout '"answer": "En el sótano -2."'
+
+! exec openarch-docs eval --model-url http://127.0.0.1:9 --rejudge report.json questions.txt
+stderr 'docker desktop enable model-runner'
+
+# A new run needs a case.
+! exec openarch-docs eval questions.txt
+! stdout .
+
+-- questions.txt --
+Q: ¿Dónde está la centralización?
+F: Está en el sótano -2.
+-- report.json --
+{"model": "m", "results": [{"line": 1, "question": "¿Dónde está la centralización?", "status": "pass", "answer": "En el sótano -2.", "seconds": 1, "judge": -1}], "pass": 1}

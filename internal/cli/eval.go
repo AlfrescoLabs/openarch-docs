@@ -84,13 +84,6 @@ A: line it lists the key facts of the reference itself, which is less steady. Ke
   openarch docs eval questions.txt --profile small --output json > report.json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := app.caseRoot()
-			if err != nil {
-				return err
-			}
-			if err := requireManifest(root); err != nil {
-				return err
-			}
 			f, err := os.Open(args[0])
 			if err != nil {
 				return output.Usage(err.Error(), "")
@@ -120,6 +113,14 @@ A: line it lists the key facts of the reference itself, which is less steady. Ke
 					return modelError(err, judgeModel)
 				}
 				return app.Printer.Print(evalResult{rep})
+			}
+			// Only a new run reads the case; --rejudge reads the report.
+			root, err := app.caseRoot()
+			if err != nil {
+				return err
+			}
+			if err := requireManifest(root); err != nil {
+				return err
 			}
 			x, err := index.Open(cmd.Context(), root)
 			if err != nil {
