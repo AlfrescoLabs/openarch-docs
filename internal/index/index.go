@@ -587,7 +587,8 @@ func (x *Index) Latest(ctx context.Context, n int) ([]Hit, error) {
 			_ = rows.Close()
 			return nil, err
 		}
-		// Quoted messages keep the date as the mail client wrote it.
+		// Email dates are RFC 3339, quoted ones 2006-01-02T15:04, and a
+		// quoted date that could not be read stays as written.
 		if d.when = timeline.ParseDate(raw); d.when != "" {
 			all = append(all, d)
 		}

@@ -220,6 +220,8 @@ Rules:
 - When the question asks where a document is, give its file name and its path from the source.
 - "Last" or "latest" means the newest date among the sources.
 - When a fact comes from an email or a chat, say who wrote it. Never write "we" or "us" for a writer.
+- Give the date of each fact from an email or a chat: the date of its source, or the time at the start of the chat line.
+- When a fact comes from a document, name the document (the file attribute) the first time.
 - The sender of a source is its writer. A greeting such as "Hola Ana" or "Dear Ana" names the reader, not the writer.
 
 Format: 1 to 5 plain sentences that answer the question. Put the source numbers after each sentence, like "The meter room is in the basement [3]."`

@@ -233,7 +233,7 @@ func TestSourcePerMessage(t *testing.T) {
 		t.Fatalf("sources = %+v", res.Sources)
 	}
 	prompt, _ := chat.messages[1].Content.(string)
-	for _, want := range []string{`sender="Ana (ana@example.com)"`, `sender="Luis (luis@example.org)"`} {
+	for _, want := range []string{`sender="Ana (ana@example.com)"`, `sender="Luis (luis@example.org)"`, `date="2026-10-30T18:00"`} {
 		if strings.Count(prompt, want) != 1 {
 			t.Errorf("prompt has %q %d times:\n%s", want, strings.Count(prompt, want), prompt)
 		}

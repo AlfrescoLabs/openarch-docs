@@ -16,6 +16,7 @@ import (
 	"github.com/AlfrescoLabs/openarch-docs/internal/email"
 	"github.com/AlfrescoLabs/openarch-docs/internal/extract"
 	"github.com/AlfrescoLabs/openarch-docs/internal/ingest"
+	"github.com/AlfrescoLabs/openarch-docs/internal/timeline"
 	"github.com/AlfrescoLabs/openarch-docs/internal/vision"
 )
 
@@ -23,7 +24,7 @@ import (
 const RoleNote = "note"
 
 // citeVersion grows when citations change, so the index is built again.
-const citeVersion = 4
+const citeVersion = 5
 
 // Chunk sizes, in characters. mxbai-embed-large reads 512 tokens. 800
 // characters of prose are about 250 tokens; numbers, addresses and OCR noise
@@ -223,11 +224,18 @@ func pieces(d doc, text string) []piece {
 		if i+1 < len(segs) {
 			end = segs[i+1].Start
 		}
-		cite := d.cite + ", quoted message from " + sg.Info.From
-		if sg.Info.Date != "" {
-			cite += " of " + sg.Info.Date
+		// The date as the mail client wrote it ("jue, 30 oct 2026 a las
+		// 18:00") becomes 2026-10-30T18:00, so the model reads every date
+		// the same way; a date it cannot read stays as written.
+		date := sg.Info.Date
+		if iso := timeline.ParseDate(date); iso != "" {
+			date = iso
 		}
-		out = append(out, whole(text[sg.Start:end], cite, sg.Info.From, sg.Info.Date)...)
+		cite := d.cite + ", quoted message from " + sg.Info.From
+		if date != "" {
+			cite += " of " + date
+		}
+		out = append(out, whole(text[sg.Start:end], cite, sg.Info.From, date)...)
 	}
 	return out
 }

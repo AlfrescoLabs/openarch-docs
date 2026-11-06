@@ -229,7 +229,9 @@ func ParseDate(s string) string {
 		var numbers []int
 		for _, w := range wordRE.FindAllString(low, -1) {
 			w = strings.TrimSuffix(w, ".")
-			if mo, ok := months[w]; ok && month == 0 {
+			// The last month word wins: in "mar, 4 nov 2026" the first
+			// word is the weekday (martes, mardi), which reads as March.
+			if mo, ok := months[w]; ok {
 				month = mo
 				continue
 			}

@@ -112,10 +112,11 @@ func TestBuildAndSearch(t *testing.T) {
 		t.Errorf("first hit = %+v", h)
 	}
 
-	// The quoted forward is its own chunk, with the sender of the quoted message.
+	// The quoted forward is its own chunk, with the sender of the quoted
+	// message and its date read into one form.
 	hits, err = x.Search(ctx, SearchOptions{Query: "plano fotos adjunto"})
-	if err != nil || len(hits) == 0 || hits[0].Sender != "Instalador Ejemplo <instalador@example.net>" ||
-		!strings.Contains(hits[0].Cite, "quoted message from Instalador Ejemplo <instalador@example.net> of mié, 29 oct 2026 a las 18:00") {
+	if err != nil || len(hits) == 0 || hits[0].Sender != "Instalador Ejemplo <instalador@example.net>" || hits[0].Date != "2026-10-29T18:00" ||
+		!strings.Contains(hits[0].Cite, "quoted message from Instalador Ejemplo <instalador@example.net> of 2026-10-29T18:00") {
 		t.Errorf("quoted hit = %+v, %v", hits, err)
 	}
 
