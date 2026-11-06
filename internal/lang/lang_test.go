@@ -11,7 +11,7 @@ func TestAll(t *testing.T) {
 	}
 	headerFields := []string{"from", "date", "to", "cc", "subject"}
 	for _, l := range All {
-		if l.Tesseract == "" || len(l.ForwardMarkers) == 0 || len(l.ChatAttached) == 0 || len(l.ChatFileAttached) == 0 {
+		if l.Tesseract == "" || len(l.ForwardMarkers) == 0 || len(l.ChatAttached) == 0 || len(l.ChatFileAttached) == 0 || len(l.StatePhrases) == 0 {
 			t.Errorf("%s: missing data", l.Code)
 		}
 		for _, field := range []string{"from", "date", "subject"} {
@@ -132,6 +132,26 @@ func TestPages(t *testing.T) {
 	} {
 		if got := Pages(text); !slices.Equal(got, want) {
 			t.Errorf("Pages(%q) = %v, want %v", text, got, want)
+		}
+	}
+}
+
+func TestAsksLatest(t *testing.T) {
+	for text, want := range map[string]bool{
+		"¿Cuál fue el último correo?":                true,
+		"What is the latest email?":                  true,
+		"¿Cuáles son los siguientes pasos?":          true,
+		"¿Cuál es el estado actual del expediente?":  true,
+		"What are the next steps?":                   true,
+		"Quelles sont les prochaines étapes ?":       true,
+		"Où en est le dossier ?":                     true,
+		"Quais são os próximos passos?":              true,
+		"¿Dónde está el plano?":                      false,
+		"¿Qué estado tiene la plaza en el catastro?": false,
+		"The next stepson arrived":                   false,
+	} {
+		if got := AsksLatest(text); got != want {
+			t.Errorf("AsksLatest(%q) = %v, want %v", text, got, want)
 		}
 	}
 }
