@@ -278,3 +278,37 @@ func TestChunks(t *testing.T) {
 		t.Errorf("short text = %q", got)
 	}
 }
+
+// A forward wrapper is newer than the message it forwards, but has no text
+// of its own: Latest gives the forwarded message instead.
+func TestLatestSkipsWrappers(t *testing.T) {
+	root := t.TempDir()
+	mail := "From: Ana <ana@example.com>\nTo: Ana <ana@example.org>\nSubject: Fwd: Condiciones\nDate: Thu, 05 Nov 2026 18:37:00 +0100\n\n" +
+		"---------- Forwarded message ---------\n" +
+		"From: Instalador Ejemplo <instalador@example.net>\nDate: Wed, Nov 4, 2026 at 4:54 PM\nSubject: Condiciones\nTo: Ana <ana@example.com>\n\n" +
+		"La distribuidora propone pedir nuevas condiciones para el portal 3 y anular las actuales.\n"
+	if err := os.WriteFile(filepath.Join(root, "fwd.eml"), []byte(mail), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ingest.Run(ingest.Options{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	x := open(t, root)
+	if _, err := x.Build(context.Background(), BuildOptions{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	hits, err := x.Latest(context.Background(), 1)
+	if err != nil || len(hits) != 1 || hits[0].Sender != "Instalador Ejemplo <instalador@example.net>" {
+		t.Fatalf("Latest = %+v, %v", hits, err)
+	}
+}
+
+func TestOwnLetters(t *testing.T) {
+	wrapper := "----------\nFrom: Ana <ana@example.com>\nDate: Wed, Nov 4, 2026 at 5:13 PM\n\nFYI\nForwarded Conversation\nSubject: RV: Condiciones\n------------------------"
+	if n := ownLetters(wrapper); n >= minOwnLetters {
+		t.Errorf("wrapper has %d own letters", n)
+	}
+	if n := ownLetters("From: Ana\n\nLa distribuidora propone pedir nuevas condiciones para el portal 3 y anular las actuales."); n < minOwnLetters {
+		t.Errorf("message has only %d own letters", n)
+	}
+}

@@ -183,6 +183,12 @@ func ParseDate(s string) string {
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t.Format(timeLayout)
 	}
+	// Its own form, which the index stores for quoted messages.
+	for _, layout := range []string{timeLayout, "2006-01-02T15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.Format(timeLayout)
+		}
+	}
 	// Gmail writes "5:51\u202fPM" with a narrow no-break space; Go regexp \s
 	// is ASCII only, so every Unicode space becomes a plain space.
 	s = strings.Map(func(r rune) rune {

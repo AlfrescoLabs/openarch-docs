@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -566,11 +567,33 @@ func foldAccents(s string) string {
 	return b.String()
 }
 
+// minOwnLetters is the text a message needs, besides its header lines, to
+// count as one of the newest. A forward wrapper ("Fwd:" with only
+// "Forwarded Conversation") has less, and would take the place of the
+// message it forwards.
+const minOwnLetters = 60
+
+// headerLike matches a header line of a quoted message, such as "From: ..."
+// or "Date: ...", and a separator line.
+var headerLike = regexp.MustCompile(`^(?:>\s*)*(?:[\p{L} -]{1,25}:.*|[-_]+)$`)
+
+// ownLetters counts the letters and digits of a text outside its header lines.
+func ownLetters(text string) int {
+	n := 0
+	for _, line := range strings.Split(text, "\n") {
+		if line = strings.TrimSpace(line); !headerLike.MatchString(line) {
+			n += letters(line)
+		}
+	}
+	return n
+}
+
 // Latest returns the newest email messages: for each of the n messages with
 // the latest date, outer emails and quoted messages alike, its first
-// latestChunks chunks, newest first.
+// latestChunks chunks, newest first. Messages with almost no text of their
+// own, such as forward wrappers, are left out.
 func (x *Index) Latest(ctx context.Context, n int) ([]Hit, error) {
-	rows, err := x.db.QueryContext(ctx, `SELECT id, date, cite FROM chunks WHERE kind = 'body' AND date != '' ORDER BY id`)
+	rows, err := x.db.QueryContext(ctx, `SELECT id, date, cite, text FROM chunks WHERE kind = 'body' AND date != '' ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -580,10 +603,11 @@ func (x *Index) Latest(ctx context.Context, n int) ([]Hit, error) {
 		cite string
 	}
 	var all []dated
+	own := map[string]int{}
 	for rows.Next() {
 		var d dated
-		var raw string
-		if err := rows.Scan(&d.id, &raw, &d.cite); err != nil {
+		var raw, text string
+		if err := rows.Scan(&d.id, &raw, &d.cite, &text); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -591,6 +615,7 @@ func (x *Index) Latest(ctx context.Context, n int) ([]Hit, error) {
 		// quoted date that could not be read stays as written.
 		if d.when = timeline.ParseDate(raw); d.when != "" {
 			all = append(all, d)
+			own[d.cite] += ownLetters(text)
 		}
 	}
 	if err := rows.Close(); err != nil {
@@ -600,6 +625,9 @@ func (x *Index) Latest(ctx context.Context, n int) ([]Hit, error) {
 	var hits []Hit
 	perMessage := map[string]int{}
 	for _, d := range all {
+		if own[d.cite] < minOwnLetters {
+			continue
+		}
 		if _, ok := perMessage[d.cite]; !ok && len(perMessage) == n {
 			continue
 		}
