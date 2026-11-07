@@ -9,11 +9,37 @@ Status: early development. `init`, `add`, `status`, `collect`, `eval`, `ingest`,
 ## Requirements
 
 - Docker with Docker Model Runner.
-- The `openarch` CLI (a release with `documents upload --replace`) and a running OpenArch (`openarch up`).
+- The [`openarch` CLI](https://github.com/AlfrescoLabs/openarch-cli) 0.5.0 or later, and a running OpenArch (`openarch up`).
+
+## Install
+
+Download the archive for your system from the [releases page](https://github.com/AlfrescoLabs/openarch-docs/releases): Linux, macOS and Windows, on amd64 or arm64. Put `openarch-docs` on your `PATH`, next to `openarch`.
+
+```
+VERSION=0.1.0
+OS=linux        # or darwin, windows
+ARCH=amd64      # or arm64
+curl -LO "https://github.com/AlfrescoLabs/openarch-docs/releases/download/v$VERSION/openarch-docs_${VERSION}_${OS}_${ARCH}.tar.gz"
+curl -LO "https://github.com/AlfrescoLabs/openarch-docs/releases/download/v$VERSION/checksums.txt"
+sha256sum --ignore-missing -c checksums.txt     # on macOS: shasum -a 256 --ignore-missing -c checksums.txt
+tar xzf "openarch-docs_${VERSION}_${OS}_${ARCH}.tar.gz"
+sudo mv openarch-docs /usr/local/bin/
+openarch docs version
+```
+
+On Windows, download the `.zip` archive and put `openarch-docs.exe` in a folder on your `PATH`. The binaries are not signed with an Apple or Microsoft certificate: when a browser downloaded the file, run `xattr -d com.apple.quarantine openarch-docs` once on macOS.
+
+`checksums.txt` is signed with [cosign](https://docs.sigstore.dev/) by the release workflow (keyless, with the GitHub Actions identity), and each archive has an SBOM (`.sbom.json`, SPDX):
+
+```
+curl -LO "https://github.com/AlfrescoLabs/openarch-docs/releases/download/v$VERSION/checksums.txt.sigstore.json"
+cosign verify-blob checksums.txt \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity "https://github.com/AlfrescoLabs/openarch-docs/.github/workflows/release.yml@refs/tags/v$VERSION" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 ## Use
-
-Put `openarch-docs` on your `PATH`. Then:
 
 ```
 openarch docs init my-case-folder && cd my-case-folder
