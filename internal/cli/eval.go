@@ -53,7 +53,7 @@ func (r evalResult) WriteText(w io.Writer) error {
 
 func newEvalCmd(app *App) *cobra.Command {
 	var limit int
-	var noJudge, expand, rerank, neigh, noNotes, judgeThink bool
+	var noJudge, noNotes, judgeThink bool
 	var rejudge string
 	var judgeModel string
 	cmd := &cobra.Command{
@@ -131,8 +131,7 @@ A: line it lists the key facts of the reference itself, which is less steady. Ke
 			}
 			defer func() { _ = x.Close() }()
 			rep, err := eval.Run(cmd.Context(), qs, eval.Options{
-				Ask: ask.Options{Limit: limit, Index: x, Embedder: client, EmbedModel: p.Embed, Chat: client, ChatModel: p.Chat,
-					Expand: expand, Rerank: rerank, Neighbors: neigh, NoNotes: noNotes},
+				Ask:      ask.Options{Limit: limit, Index: x, Embedder: client, EmbedModel: p.Embed, Chat: client, ChatModel: p.Chat, NoNotes: noNotes},
 				Progress: app.Streams.Err,
 				Judge:    jopts.Judge, JudgeModel: judgeModel, JudgeThink: judgeThink,
 			})
@@ -145,9 +144,6 @@ A: line it lists the key facts of the reference itself, which is less steady. Ke
 	cmd.Flags().BoolVar(&noJudge, "no-judge", false, "do not judge the answers")
 	cmd.Flags().BoolVar(&judgeThink, "judge-think", false, "let the judge think before it scores: slower, steadier")
 	cmd.Flags().StringVar(&rejudge, "rejudge", "", "score the answers of this JSON report again, without asking again")
-	cmd.Flags().BoolVar(&expand, "expand", false, "ask with query expansion (to measure it)")
-	cmd.Flags().BoolVar(&rerank, "rerank", false, "ask with rerank (to measure it)")
-	cmd.Flags().BoolVar(&neigh, "neighbors", false, "ask with neighbor pieces (to measure them)")
 	cmd.Flags().BoolVar(&noNotes, "no-notes", false, "ask without notes (to measure them)")
 	cmd.Flags().StringVar(&judgeModel, "judge-model", "", "model that judges the answers (default: the chat model of the profile); give the same one to compare profiles")
 	cmd.Flags().IntVar(&limit, "limit", 12, "number of sources the model reads for each question")

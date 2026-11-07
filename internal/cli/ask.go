@@ -57,9 +57,8 @@ func (r askResult) WriteText(w io.Writer) error {
 
 func newAskCmd(app *App) *cobra.Command {
 	var (
-		limit                          int
-		noNotes, expand, rerank, neigh bool
-		think, cont, fresh             bool
+		limit                       int
+		noNotes, think, cont, fresh bool
 	)
 	cmd := &cobra.Command{
 		Use:   "ask <question>",
@@ -72,11 +71,6 @@ emails when the question asks for the last one, gives the model the best
 pieces as numbered sources, and asks
 it to answer in the language of the question, citing a source for every fact
 as [n]. The model makes no tool calls, so small models work.
-
---expand also searches with 3 queries the model writes in other words,
---rerank lets the model pick the passages that help from 30 candidates, and
---neighbors adds the pieces around each one. They are off by default: on a
-real case they added little and made answers about 3 times slower.
 
 --continue makes the question part of a conversation: the model reads the
 last 3 questions and answers, and first writes the question so that it
@@ -126,7 +120,7 @@ Run index first.`,
 			client := app.modelClient()
 			question := strings.Join(args, " ")
 			res, err := ask.Run(cmd.Context(), ask.Options{
-				Question: question, Limit: limit, NoNotes: noNotes, Think: think, Expand: expand, Rerank: rerank, Neighbors: neigh, Index: x,
+				Question: question, Limit: limit, NoNotes: noNotes, Think: think, Index: x,
 				Embedder: client, EmbedModel: p.Embed, Chat: client, ChatModel: p.Chat, History: history,
 			})
 			if errors.Is(err, models.ErrNoAnswer) {
@@ -149,9 +143,6 @@ Run index first.`,
 	}
 	cmd.Flags().IntVar(&limit, "limit", 12, "number of sources the model reads")
 	cmd.Flags().BoolVar(&noNotes, "no-notes", false, "leave the notes out of the sources")
-	cmd.Flags().BoolVar(&expand, "expand", false, "also search with 3 queries the model writes in other words (slower)")
-	cmd.Flags().BoolVar(&rerank, "rerank", false, "let the model pick the useful passages from 30 candidates (slower)")
-	cmd.Flags().BoolVar(&neigh, "neighbors", false, "add the pieces around each hit")
 	cmd.Flags().BoolVar(&cont, "continue", false, "continue the conversation: read the last questions and answers")
 	cmd.Flags().BoolVar(&fresh, "new", false, "start a new conversation, kept for --continue")
 	cmd.MarkFlagsMutuallyExclusive("continue", "new")

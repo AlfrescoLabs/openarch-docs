@@ -503,26 +503,6 @@ func (x *Index) hit(ctx context.Context, id int64) (Hit, error) {
 	return h, err
 }
 
-// Neighbors returns the chunks just before and after a chunk in the same
-// message: same file and same citation.
-func (x *Index) Neighbors(ctx context.Context, h Hit) ([]Hit, error) {
-	var out []Hit
-	for _, id := range []int64{h.ID - 1, h.ID + 1} {
-		n, err := x.hit(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		if n.Path == h.Path && n.Cite == h.Cite {
-			n.Matched = []string{"neighbor"}
-			out = append(out, n)
-		}
-	}
-	return out, nil
-}
-
 // searchText returns chunk ids by BM25 rank. Each word of the query is a term,
 // and any term can match.
 func (x *Index) searchText(ctx context.Context, query string, pages []int) ([]int64, error) {

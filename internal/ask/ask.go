@@ -36,12 +36,6 @@ type Options struct {
 	NoNotes bool
 	// Think lets the model think before it answers: slower, sometimes better.
 	Think bool
-	// Expand also searches with queries the model writes in other words.
-	Expand bool
-	// Rerank lets the model pick the useful candidates.
-	Rerank bool
-	// Neighbors adds the chunks around each hit.
-	Neighbors bool
 	// History holds the earlier turns of the conversation, oldest first. With
 	// history, the model first writes the question so that it stands alone,
 	// and the last turns go to the model before the sources.
@@ -97,16 +91,6 @@ type Result struct {
 // retryPrompt asks again when the answer has no sentences.
 const retryPrompt = "Your answer has no sentences. Write 1 to 5 full sentences in the language of the question, each followed by its source numbers. If the sources do not hold the answer, write that in one sentence."
 
-// candidates is the number of chunks that search gives to the rerank step.
-const candidates = 30
-
-// expandPrompt asks for more search queries. %s is the language, %s the question.
-const expandPrompt = `Write 3 search queries to find, in a case file of emails, chat messages, PDFs and photos, the passages that answer the question below.
-Use other words than the question: the names, places, dates, document names and the words that such a passage would contain.
-Write them in %s. Write one query per line, and nothing else.
-
-Question: %s`
-
 // standalonePrompt asks the model to write a follow-up question so that it
 // stands alone. %s is the language, %s the conversation, %s the question.
 const standalonePrompt = `Below is a conversation about a case file and a new question.
@@ -146,116 +130,11 @@ func lastTurns(h []Turn) []Turn {
 	return h[max(0, len(h)-maxTurns):]
 }
 
-// rerankPrompt asks the model to pick the useful passages.
-const rerankPrompt = `Below are numbered passages from a case file, and a question.
-Which passages hold facts that help answer the question? Think about who wrote each passage and when.
-Reply with their numbers only, the most useful first, at most %d, separated by commas. Reply "none" when no passage helps.
-
-%s
-Question: %s`
-
-// retrieve finds the chunks for a question: search with the question and,
-// when turned on, with queries the model writes; then the model picks the
-// useful candidates and each pick brings its neighbors, when turned on.
+// retrieve finds the case and reference chunks for a question.
 func retrieve(ctx context.Context, opts Options) ([]index.Hit, error) {
-	queries := []string{opts.Question}
-	language := "the language of the question"
-	if l, ok := lang.Detect(opts.Question); ok {
-		language = l.Name
-	}
-	small := models.ChatOptions{Temperature: 0, Seed: 42, MaxTokens: 300}
-	if opts.Expand {
-		reply, err := opts.Chat.Chat(ctx, opts.ChatModel, []models.Message{{Role: "user", Content: fmt.Sprintf(expandPrompt, language, opts.Question)}}, small)
-		if err != nil {
-			return nil, err
-		}
-		for _, line := range strings.Split(reply, "\n") {
-			line = strings.Trim(strings.TrimSpace(line), "-*0123456789.)\"' ")
-			if len([]rune(line)) >= 3 && len(queries) < 4 {
-				queries = append(queries, line)
-			}
-		}
-	}
-	// Reciprocal rank fusion over the queries; the question itself weighs most.
-	scores := map[int64]float64{}
-	byID := map[int64]index.Hit{}
-	for i, q := range queries {
-		hits, err := opts.Index.Search(ctx, index.SearchOptions{
-			Query: q, Limit: candidates, Roles: []string{casefile.RoleCase, casefile.RoleReference}, Embedder: opts.Embedder, Model: opts.EmbedModel,
-		})
-		if err != nil {
-			return nil, err
-		}
-		weight := 1.0
-		if i > 0 {
-			weight = 0.6
-		}
-		for rank, h := range hits {
-			scores[h.ID] += weight / float64(60+rank+1)
-			byID[h.ID] = h
-		}
-	}
-	cands := make([]index.Hit, 0, len(byID))
-	for _, h := range byID {
-		cands = append(cands, h)
-	}
-	slices.SortFunc(cands, func(a, b index.Hit) int {
-		if c := cmp.Compare(scores[b.ID], scores[a.ID]); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.ID, b.ID)
+	return opts.Index.Search(ctx, index.SearchOptions{
+		Query: opts.Question, Limit: opts.Limit, Roles: []string{casefile.RoleCase, casefile.RoleReference}, Embedder: opts.Embedder, Model: opts.EmbedModel,
 	})
-	if len(cands) > candidates {
-		cands = cands[:candidates]
-	}
-	picked := cands
-	if opts.Rerank && len(cands) > opts.Limit {
-		var b strings.Builder
-		for i, h := range cands {
-			text := strings.Join(strings.Fields(h.Text), " ")
-			if r := []rune(text); len(r) > 500 {
-				text = string(r[:500]) + " ..."
-			}
-			fmt.Fprintf(&b, "[%d] %s", i+1, h.Cite)
-			if h.Sender != "" {
-				fmt.Fprintf(&b, " (written by %s)", h.Sender)
-			}
-			fmt.Fprintf(&b, "\n%s\n\n", text)
-		}
-		reply, err := opts.Chat.Chat(ctx, opts.ChatModel, []models.Message{{Role: "user", Content: fmt.Sprintf(rerankPrompt, opts.Limit, b.String(), opts.Question)}}, small)
-		if err != nil {
-			return nil, err
-		}
-		// A reply without numbers ("none", or text) keeps the search order.
-		var chosen []index.Hit
-		seen := map[int]bool{}
-		for _, part := range strings.FieldsFunc(reply, func(r rune) bool { return r < '0' || r > '9' }) {
-			n, err := strconv.Atoi(part)
-			if err != nil || n < 1 || n > len(cands) || seen[n] {
-				continue
-			}
-			seen[n] = true
-			chosen = append(chosen, cands[n-1])
-		}
-		if len(chosen) > 0 {
-			picked = chosen
-		}
-	}
-	if len(picked) > opts.Limit {
-		picked = picked[:opts.Limit]
-	}
-	if !opts.Neighbors {
-		return picked, nil
-	}
-	out := slices.Clone(picked)
-	for _, h := range picked {
-		n, err := opts.Index.Neighbors(ctx, h)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, n...)
-	}
-	return out, nil
 }
 
 // maxNotes is the number of notes that join the sources.

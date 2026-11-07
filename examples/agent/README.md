@@ -50,7 +50,6 @@ The vision model and the agent can be wrong. Check important facts in the cited 
 ```
 ./eval.sh                     # large profile
 PROFILE=small ./eval.sh
-./eval.sh --expand --rerank   # measure an optional retrieval step
 ```
 
 It writes `eval-report.json` in the current folder and prints the totals: keyword checks (pass, partial, fail) and the judge score. Each question has `F:` lines with its key facts, and the judge model checks each one. Compare the totals with an earlier report: one point up or down is often model noise.
