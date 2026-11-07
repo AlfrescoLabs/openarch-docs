@@ -98,7 +98,7 @@ what you downloaded yourself.
 A file with the same name and other content is an error: originals are
 never replaced.`,
 		Example: `  openarch docs add ~/Downloads/respuesta.eml
-  openarch docs add --reference ~/Downloads/BOE-A-1960-10906.pdf --source-url https://www.boe.es/eli/es/l/1960/07/21/49/con
+  openarch docs add --reference ~/Downloads/garage-rules.pdf --source-url https://example.org/garage-rules
   pbpaste | openarch docs add --text --name 2026-11-04-ultima-actualizacion.txt --note "pasted from Gmail"`,
 		RunE: func(_ *cobra.Command, args []string) error {
 			root, err := app.caseRoot()
