@@ -135,6 +135,11 @@ func (r reindexResult) WriteText(w io.Writer) error {
 			return err
 		}
 	}
+	for _, c := range r.Corrupt {
+		if _, err := fmt.Fprintf(w, "corrupt   %s: the download does not match its SHA-256 and was not written\n", c); err != nil {
+			return err
+		}
+	}
 	if r.Index != nil {
 		return indexResult{r.Index}.WriteText(w)
 	}
@@ -154,7 +159,9 @@ their descriptions, and update the search index. Use it on a new computer, or
 after extracted/ was deleted.
 
 Files that already match OpenArch are kept. A local original that differs from
-OpenArch is never overwritten: it is listed as a conflict. Documents in the
+OpenArch is never overwritten: it is listed as a conflict. A download that does
+not match the SHA-256 in its description is not written: it is listed as
+corrupt. Documents in the
 folder that the plugin did not upload are skipped. Local files that were never
 synced keep their manifest entries.`,
 		Example: `  mkdir garage && cd garage && openarch docs reindex --remote /cases/garage

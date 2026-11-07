@@ -179,6 +179,37 @@ func TestSyncAndRestore(t *testing.T) {
 	}
 }
 
+func TestRestoreRejectsCorruptDownload(t *testing.T) {
+	root := newCase(t)
+	oa := newFakeOA()
+	ctx := context.Background()
+	if _, err := Sync(ctx, SyncOptions{Root: root, Remote: "/cases/c", Client: oa}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := oa.Get(ctx, "/cases/c/originals/fotos/foto.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oa.content[d.ID] = []byte("replaced")
+
+	dst := t.TempDir()
+	rr, err := Restore(ctx, RestoreOptions{Root: dst, Remote: "/cases/c", Client: oa})
+	if err != nil || rr.Downloaded != 4 || len(rr.Corrupt) != 1 || rr.Corrupt[0] != "fotos/foto.jpg" {
+		t.Fatalf("restore = %+v, %v", rr, err)
+	}
+	for _, p := range []string{"fotos/foto.jpg", "fotos/foto.jpg.download"} {
+		if _, err := os.Stat(filepath.Join(dst, filepath.FromSlash(p))); err == nil {
+			t.Errorf("%s written", p)
+		}
+	}
+	m, _ := casefile.Load(dst)
+	for _, o := range m.Originals {
+		if o.Path == "fotos/foto.jpg" {
+			t.Error("corrupt file in the manifest")
+		}
+	}
+}
+
 func TestRestoreSkipsForeignAndUnsafe(t *testing.T) {
 	oa := newFakeOA()
 	ctx := context.Background()

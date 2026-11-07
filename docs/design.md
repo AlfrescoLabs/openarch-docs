@@ -176,7 +176,7 @@ The prompt asks for fixed headings, every readable text exactly as written, no g
 
 The description of each uploaded document is the text `openarch-docs/1`, a space, and one line of JSON: `{"role":"original","original":{...}}` or `{"role":"derived","derived":{...}}`, the manifest entry of the file. (This `role` says original or derived; it is not the manifest role.) `extracted/sync.json` keeps the remote, the folder ids, and the id and SHA-256 of each uploaded file. Only files whose SHA-256 changed are uploaded again, with `openarch documents upload --replace`, so a document keeps its id.
 
-`reindex` reads the descriptions of the remote tree, downloads each file whose local copy is missing or differs, and merges the entries into the local manifest. A local original that differs is never overwritten; it is a conflict. Documents without the description prefix, and paths that would leave the case folder, are skipped. Then it updates the search index.
+`reindex` reads the descriptions of the remote tree, downloads each file whose local copy is missing or differs, and merges the entries into the local manifest. A local original that differs is never overwritten; it is a conflict. A download that does not match the SHA-256 in its description is not written and gets no manifest entry; it is listed as corrupt. Documents without the description prefix, and paths that would leave the case folder, are skipped. Then it updates the search index.
 
 The plugin runs `openarch ... --output json --non-interactive` for every call, so it never sees a password. Exit codes of openarch pass through (6 for a failed login). It needs an openarch whose `documents upload` has `--replace` and `--description`.
 
@@ -202,7 +202,7 @@ The Agent Skill `skills/openarch-docs/SKILL.md` is embedded in the binary. `skil
 ## Limits
 
 - **Untrusted text.** Case documents come from other people and go to the `ask` prompt and the MCP agent, so a document can hold instructions. Limits on the damage: no network, no tool calls in `ask`, MCP writes only in `notes/`, `--read-only`. Source text is not escaped yet: `</source>` in a document breaks the source tags.
-- **Stale remote files.** `sync` never deletes in OpenArch, so `reindex` brings back the files of a changed or deleted original. Accepted, because originals should not change. `reindex` does not yet check downloads against their SHA-256; run `verify` after it.
+- **Stale remote files.** `sync` never deletes in OpenArch, so `reindex` brings back the files of a changed or deleted original. Accepted, because originals should not change.
 - **Memory.** The RAM figure of each profile is the machine size it was tried on. In an agent run with `look`, the chat and vision models are loaded together.
 - **Context.** The plugin does not set or check the context size of the model. A long `ask` prompt can pass it, and the answer gets worse with no error.
 - **Scale.** Tried on cases of about 100 files and 500 chunks. Every search reads all vectors; a case with tens of thousands of chunks would need a vector index.

@@ -280,6 +280,9 @@ type RestoreResult struct {
 	// Conflicts are local originals that differ from OpenArch. They are
 	// never overwritten.
 	Conflicts []string `json:"conflicts"`
+	// Corrupt are files whose download does not match the SHA-256 in their
+	// description. They are not written and get no manifest entry.
+	Corrupt []string `json:"corrupt"`
 	// Skipped counts documents in the folder that the plugin did not upload.
 	Skipped  int    `json:"skipped"`
 	Manifest string `json:"manifest"`
@@ -296,7 +299,7 @@ type remoteFile struct {
 // originals that differ are never overwritten.
 func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 	var files []remoteFile
-	res := &RestoreResult{Remote: opts.Remote, Conflicts: []string{}, Manifest: casefile.ManifestFile}
+	res := &RestoreResult{Remote: opts.Remote, Conflicts: []string{}, Corrupt: []string{}, Manifest: casefile.ManifestFile}
 	var walk func(folder string) error
 	walk = func(folder string) error {
 		docs, err := opts.Client.List(ctx, folder)
@@ -359,7 +362,12 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 			if opts.Progress != nil {
 				_, _ = fmt.Fprintf(opts.Progress, "Downloading %s\n", local)
 			}
-			if err := download(ctx, opts.Client, f.doc.ID, dst); err != nil {
+			err := download(ctx, opts.Client, f.doc.ID, dst, sha)
+			if errors.Is(err, errHashMismatch) {
+				res.Corrupt = append(res.Corrupt, local)
+				continue
+			}
+			if err != nil {
 				return nil, fmt.Errorf("download %s: %w", local, err)
 			}
 			res.Downloaded++
@@ -374,6 +382,7 @@ func Restore(ctx context.Context, opts RestoreOptions) (*RestoreResult, error) {
 		st.Files[local] = FileState{ID: f.doc.ID, SHA256: sha}
 	}
 	slices.Sort(res.Conflicts)
+	slices.Sort(res.Corrupt)
 	if err := casefile.Save(opts.Root, m); err != nil {
 		return nil, err
 	}
@@ -386,13 +395,25 @@ func safeLocal(p string) bool {
 	return c == p && c != "." && !path.IsAbs(c) && c != ".." && !strings.HasPrefix(c, "../")
 }
 
-// download writes the file of a document to dst through a temporary file.
-func download(ctx context.Context, c openarch.Client, id, dst string) error {
+// errHashMismatch means a downloaded file does not match its SHA-256.
+var errHashMismatch = errors.New("download does not match its SHA-256")
+
+// download writes the file of a document to dst through a temporary file. The
+// file only replaces dst when its SHA-256 is sha.
+func download(ctx context.Context, c openarch.Client, id, dst, sha string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
 	tmp := dst + ".download"
 	if err := c.Download(ctx, id, tmp); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	got, _, err := casefile.HashFile(tmp)
+	if err == nil && got != sha {
+		err = errHashMismatch
+	}
+	if err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}
