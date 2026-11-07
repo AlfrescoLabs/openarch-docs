@@ -44,4 +44,4 @@ Apache License 2.0.
 
 ## Agents
 
-`openarch docs mcp` is an MCP server with tools to search and read the case folder, look at its images, and write notes in `notes/`. `openarch docs skill install` adds an Agent Skill to the case folder. [examples/agent](examples/agent) runs a Docker Agent with both on a synthetic sample case.
+`openarch docs mcp` is an MCP server with tools to search and read the case folder, look at its images, and write notes in `notes/`. `openarch docs skill install` adds an Agent Skill to the case folder. [examples/agent](examples/agent) runs a Docker Agent with both on a synthetic sample case. [examples/demo](examples/demo) is a larger synthetic case in English, with scans, a plan, photos and a chat export.

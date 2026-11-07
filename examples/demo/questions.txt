@@ -1,0 +1,66 @@
+# Questions about the synthetic demo case, for openarch docs eval.
+# E: expected words, N: forbidden words, F: key facts for the judge,
+# P: an earlier question of the same conversation.
+
+Q: Who sent the connection offer, and when?
+E: Eastvale; 27 October | 27 Oct | 27/10 | 2026-10-27
+F: Eastvale Networks (Rachel Moore, Connections Officer) sent the connection offer.
+F: It was sent by email on 27 October 2026.
+
+Q: Where does Eastvale want the point of connection, and why?
+E: Block A; full
+F: The point of connection is the meter room of Block A, level -1, next to the ramp.
+F: The supply cabinet in the Block C meter room is full and cannot take a new meter.
+
+Q: Who took the photos on page 2 of the connection offer?
+E: surveyor; Adams | Eastvale
+N: Tom took
+F: K. Adams, the Eastvale surveyor, took the photos.
+F: He took them on 20 October 2026.
+
+Q: When was that person in the garage, and was the installer there?
+P: Who took the photos on page 2 of the connection offer?
+E: 20 October | 20 Oct | 20/10 | 2026-10-20
+F: The Eastvale surveyor was in the garage on 20 October 2026.
+F: Tom Hughes was not there: he was on another job that day.
+
+Q: Which cable route does the installer propose, and what is wrong with the other route?
+E: Block C | route C; 25 m; fire door
+F: Tom Hughes proposes route C, from the Block C meter room, 25 m long.
+F: Route A, from Block A, is 60 m and goes through the Block B fire door.
+F: Route A needs a fire-rated sleeve and costs about £380 more.
+
+Q: How much does the installation cost, and how much has been paid?
+E: 1,450 | 1450; 300
+F: The total price is £1,450.
+F: Maya paid a deposit of £300.
+
+Q: When does the residents' committee meet, and what does it need from Maya?
+E: 12 November | 12 Nov | 12/11 | 2026-11-12; offer; plan
+F: The committee meets on 12 November 2026.
+F: It needs the Eastvale offer letter and the cable plan of the installer.
+F: No cable may pass through the Block B fire door.
+
+Q: Does Maya own parking space 18?
+E: yes; land register | FHV-552190
+F: Yes: Maya Collins is the registered owner of Flat 4B with parking space 18.
+F: The land register extract (title FHV-552190) says so.
+
+Q: Can the residents' association refuse the charger?
+E: 4.2 | may not refuse | cannot refuse; 30 days
+F: No: under rule 4.2 the association may not refuse the installation.
+F: Within 30 days of the notice it may set conditions on the cable route, fire safety and common parts.
+
+Q: Until when is the connection offer valid?
+E: 26 December | 26 Dec | 26/12 | 2026-12-26
+F: The offer is valid for 60 days, until 26 December 2026.
+
+Q: Which meter room is in the photo that Tom sent on WhatsApp, and when did he send it?
+E: Block C; 24 September | 24 Sep | 24/09 | 2026-09-24
+F: Tom Hughes sent the photo of the Block C meter room, level -1, by WhatsApp.
+F: He sent it on 24 September 2026.
+
+Q: What brand of charger will be installed?
+E: not | no
+N: Tesla; Wallbox; Zappi
+F: The sources do not give the brand of the charger; the quote only says a 7 kW wall charger.

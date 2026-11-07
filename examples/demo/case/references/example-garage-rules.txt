@@ -1,0 +1,11 @@
+Model rules for shared residential garages
+
+This is an invented example text for the openarch-docs demo. It is not a real law or a real set of rules.
+
+Rule 4.1. An owner may install a charging point for an electric vehicle at their own parking space, at their own cost, after written notice to the residents' association.
+
+Rule 4.2. The association may not refuse the installation. Within 30 days of the notice, it may set conditions on the cable route, on fire safety and on the use of the common parts.
+
+Rule 4.3. If the association sets no conditions within 30 days of the notice, the owner may go ahead with the route given in the notice.
+
+Rule 4.4. The owner pays for the installation, its upkeep and the electricity it uses, and for any damage to the common parts.
