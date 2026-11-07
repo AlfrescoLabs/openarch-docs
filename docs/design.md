@@ -1,55 +1,98 @@
 # Design
 
-`openarch-docs` is one Go binary. It runs as the `openarch docs` plugin of the openarch CLI, or on its own.
+`openarch-docs` helps one person work with the documents of one case. A case is one folder of documents about one matter, such as a claim, a dispute or a request, where the facts are spread over emails, chat exports, PDFs, scans and photos. The tool records every file with its checksum, extracts the text, and answers questions with a source for every fact. All models run locally.
+
+It is one Go binary. It runs as the `openarch docs` plugin of the openarch CLI (github.com/AlfrescoLabs/openarch-cli), or on its own. OpenArch is the document store that the openarch CLI installs and runs; openarch-docs keeps each case there.
+
+The goal is the simplest deployment (fewest tools, least CPU, memory and model calls) with acceptable answers. "Acceptable" is checked, not targeted: `eval` on the synthetic sample case in `examples/agent` is the regression check.
+
+This document describes the current build. Flags and file formats are in `openarch docs <command> --help`.
 
 ## Rules
 
-1. **Local models only.** Chat, vision and embeddings run on Docker Model Runner. No cloud calls.
-2. **Offline.** The plugin never downloads documents. Law texts and screenshots are files the user adds to the case folder, with `add` (and `--source-url` to record where they came from).
-3. **OpenArch is required.** It is the store of record for originals and derived files. The local index is a cache that can be rebuilt from OpenArch.
-4. **Originals never change.** Every original has a SHA-256 checksum. Every derived file records its source file and, when it applies, the attachment name and the message headers.
-5. **Only Docker on the host.** Text extraction, page rendering and OCR run in the plugin tools image with no network.
-6. **Same output contract as openarch.** Every command supports `--output json`. Results go to stdout, logs to stderr. In JSON mode errors also go to stdout. Exit codes match openarch.
-7. **Languages.** English, Spanish, French and Portuguese. The words that mail clients and chat exports write (forward markers, quoted headers, attachment lines) and the OCR codes live in one table, `internal/lang`. Parsers match every language at once, so one case folder can mix them. A new language is one new entry.
-8. **Answers cite sources.** Every fact in an answer points to a file and a page. Case facts, reference texts (law) and notes (interpretations) are cited apart.
+1. **Local models only.** Chat, vision and embeddings run on Docker Model Runner, because case documents are private.
+2. **No outside network.** The plugin never fetches documents or web pages. Law texts and screenshots are files the user adds with `add` (`--source-url` records where they came from), so every source is a file in the case. The plugin talks only to Docker Model Runner on localhost and to the configured OpenArch. Setup needs the network once: Docker pulls the models and the base image of the tools image.
+3. **OpenArch is required.** It is the store of record for originals and derived files, because a case folder on one laptop is easy to lose. Only `sync` and `reindex` call it; every other command works from the case folder. The local index is a cache that can be rebuilt.
+4. **Originals never change.** Every original has a SHA-256 checksum. Every derived file records its source file and, when it applies, the attachment name and the message headers. An answer must be traceable to the files as they were received.
+5. **Only Docker on the host.** Text extraction, page rendering and OCR run in the plugin tools image with no network, so they behave the same on every OS. `--tools local` runs the same programs from `PATH` with no sandbox; it is for development and tests.
+6. **Same output contract as openarch.** Every command supports `--output json`. Results go to stdout, logs to stderr. In JSON mode errors also go to stdout. Exit codes and the JSON error shape are the ones of openarch (`openarch-docs --help` lists the codes), so scripts and agents handle both tools the same way.
+7. **Languages.** English, Spanish, French and Portuguese. The words that mail clients and chat exports write (forward markers, quoted headers, attachment lines), month names, common words and the OCR codes live in one table, `internal/lang`. Parsers match every language at once, so one case folder can mix them. A new language is one new entry plus its tesseract language pack in the tools image.
+8. **Answers cite sources.** The model is asked to cite a source for every fact. A citation names a file, and a page when there is one. Case facts, reference texts (laws) and notes (interpretations) are labeled by role. `ask` checks the citations after the answer; the checks flag doubtful citations, they do not prove an answer right.
+
+## Decisions
+
+| Decision | Rejected option | Trade-off |
+| --- | --- | --- |
+| A plugin of openarch | Built into openarch | openarch stays small; costs a second binary. |
+| SQLite FTS5 and a scan of all vectors, in one file | A vector database | No extra service; too slow for tens of thousands of chunks. |
+| A tools image with poppler and tesseract | Go libraries for PDF and OCR | Mature OCR in four languages on every OS; costs an image build on first use. |
+| `ask` makes no tool calls; agents use the MCP server | An agent loop inside `ask` | Works with small models; `ask` cannot look for more sources itself. |
+| Provenance in the description of each OpenArch document, through the `openarch` CLI | A manifest document, or the REST API | Each document carries its provenance and the plugin never sees a password; costs one process per file. |
+
+## Pipeline
+
+```mermaid
+flowchart LR
+  A[init, add] --> B[ingest]
+  B --> C[extract]
+  C --> D[describe]
+  D --> E[index]
+  E --> F[search, ask, eval, mcp]
+  B --> G[timeline]
+  E --> H[sync]
+  H --> I[(OpenArch)]
+  I --> J[reindex]
+  J --> E
+```
+
+`ingest` records the originals and unpacks emails and chats. `extract` gets the text of PDFs and images. `describe` writes a text for photos, plans and image pages. `index` builds the search index. `sync` uploads whatever exists, so it can run after any step. `status` names the next step. `verify` checks every original and derived file against its SHA-256 and reads every zip original; it needs no model and no OpenArch.
 
 ## Plugin contract
 
-openarch runs `openarch-docs` with the arguments after `docs`. Global flags given to openarch before `docs` arrive as environment variables, which this binary reads as flag defaults:
+openarch runs `openarch-docs` with the arguments after `docs`. Global flags given to openarch before `docs` arrive as environment variables. This binary reads all of these as flag defaults:
 
-| Variable | Flag |
+| Variable | Flag or use |
 | --- | --- |
-| `OPENARCH_OUTPUT` | `--output` |
-| `OPENARCH_NON_INTERACTIVE` | `--non-interactive` |
-| `OPENARCH_VERBOSE` | `--verbose` |
+| `OPENARCH_OUTPUT` | `--output` (set by openarch) |
+| `OPENARCH_NON_INTERACTIVE` | `--non-interactive` (set by openarch) |
+| `OPENARCH_VERBOSE` | `--verbose` (set by openarch) |
 | `NO_COLOR` | `--no-color` |
+| `OPENARCH_DOCS_CASE` | `--case`. With neither, the current folder. |
+| `OPENARCH_DOCS_PROFILE` | `--profile` |
+| `OPENARCH_DOCS_MODEL_URL` | `--model-url` (default `http://localhost:12434/engines/v1`) |
+| `OPENARCH_BIN` | The `openarch` binary to run. Without it, `openarch` from `PATH`. |
 
-`OPENARCH_WORKSPACE` and `OPENARCH_CONTEXT` select the OpenArch workspace and connection. The plugin does not read them itself: it runs `openarch` (`$OPENARCH_BIN`, else `openarch` from `PATH`), which reads them. Passwords never reach the plugin.
-
-The case folder is `--case`, then `OPENARCH_DOCS_CASE`, then the current folder.
+`OPENARCH_WORKSPACE` and `OPENARCH_CONTEXT` select the OpenArch workspace and connection. The plugin does not read them itself: it runs `openarch`, which reads them. `--openarch-context` on `sync` and `reindex` picks another context.
 
 ## Model profiles
 
-| Profile | Agent (tool calls) | Vision | Embeddings | RAM |
+| Profile | Chat and agent | Vision | Embeddings | RAM |
 | --- | --- | --- | --- | --- |
 | `small` | `ai/qwen2.5` (7B) | `ai/gemma3:4B-Q4_K_M` | `ai/mxbai-embed-large` | 16 GB |
-| `large` | `glm-4.7-flash:31B` | `ai/gemma3:4B-Q4_K_M` | `ai/mxbai-embed-large` | 32 GB |
+| `large` | `ai/glm-4.7-flash:31B` | `ai/gemma3:4B-Q4_K_M` | `ai/mxbai-embed-large` | 32 GB |
 
-gemma3 reads Spanish scans well but cannot do tool calls on Docker Model Runner, so it is used only for vision. The plugin keeps one large model in memory at a time.
+`ask` and `eval` use the chat model. Only the agent of `examples/agent` makes tool calls. On the small profile that agent does not call tools reliably, so the small profile is for `ask`. gemma3 reads scans and photos but cannot make tool calls on Docker Model Runner, so it is used only for vision.
 
-## Case folder
+Before `describe` and `look` on the large profile, the CLI unloads the chat model (`docker model unload`), so the vision model has enough memory. The MCP `look` tool does not unload: in an agent run both models stay loaded.
+
+## Case folder and ingest
 
 | Path | Content |
 | --- | --- |
-| any file outside the folders below | Original case documents. Never changed. |
+| any file outside the folders below | Original case documents (role `case`). Never changed. |
 | `references/` | Reference texts the user adds, such as laws. Originals with role `reference`. |
-| `notes/` | Notes and drafts. Interpretations, not sources. |
+| `pasted/` | Text the user pasted with `add --text`. Originals with role `case`. |
+| `notes/` | Notes and drafts (role `note`). Interpretations, not sources. Never originals. |
 | `extracted/manifest.json` | Every original (path, SHA-256, size, kind, role) and every derived file (path, SHA-256, source, provenance). |
 | `extracted/<name>-<hash8>/` | Derived files of one original. `<hash8>` is the start of its SHA-256, so a changed original gets a new folder. |
+| `extracted/index.sqlite`, `extracted/sync.json` | The search index (a cache) and the sync state. |
+| `.ask/` | The `ask --continue` conversation. |
 
-Hidden files and agent files (`AGENTS.md`, `CLAUDE.md`) are not originals. Each original records the parser version (`parser`) that wrote its derived files. When a release parses emails or zips better, `ingest` writes their derived files again and keeps the `extract` results of files that still exist.
+Hidden files and agent files (`AGENTS.md`, `CLAUDE.md`) are not originals. Files in `extracted/` that are not in the manifest are left alone.
 
-Email text is cleaned: HTML entities in plain text parts are decoded, and text labeled ISO-8859-1 that uses Windows-1252 characters (en dash, euro sign, curly quotes) is read as Windows-1252, as browsers do. Files in `extracted/` that are not in the manifest are left alone.
+`ingest` records each original and writes its derived files. Each original records the parser version that wrote them. When the parser version changes in a release, `ingest` writes those derived files again and keeps the `extract` results of files that still exist.
+
+Email text is cleaned: HTML entities in plain text parts are decoded, and text labeled ISO-8859-1 that uses Windows-1252 characters (en dash, euro sign, curly quotes) is read as Windows-1252, as browsers do.
 
 Derived files of an email: `message.txt` (headers and body text), `message.html`, `attachments/`, `inline/`, and `message-N/` for each attached email with its own `message.eml`. Provenance in the manifest:
 
@@ -58,7 +101,14 @@ Derived files of an email: `message.txt` (headers and body text), `message.html`
 - `forwarded`: the forwarded or quoted messages found in the body text (marker lines such as "Forwarded message" or "Mensagem encaminhada", or a `From:`/`De :` block), in every supported language.
 - `part` and `attachment`: the MIME part number and the file name the sender gave.
 
-Derived files of a WhatsApp export (iOS or Android, in any supported language): `chat.txt`, `messages.json` and `media/`. Each media file records who sent it and when. The date order (day or month first) comes from the export; when no date shows it, `messages.json` keeps the time as written and has no ISO time.
+Derived files of a WhatsApp export (iOS or Android, in any supported language): `chat.txt`, `messages.json` and `media/`. Each media file records who sent it and when. The export decides the date order (day or month first). When no date in the export shows the order, `messages.json` keeps the time as written and has no ISO time.
+
+## Init, add, status and collect
+
+- `init [folder]` makes the folders, writes `AGENTS.md` (rules for people and agents: layout, citations, facts apart from interpretations, privacy) and installs the skill. It never changes a file that exists.
+- `add <file>...` copies files into the case folder, or saves stdin in `pasted/` with `--text`. Then it ingests, and the manifest records how each original was added, from where and when. A file with the same name and other content is an error.
+- `status` counts the work left for each step and the `verify` problems, and names the next command. It needs no model and no OpenArch.
+- `collect <file>...` copies files to `notes/outbox/<date>/` to attach to a reply. Attachments get the name the sender gave them, and `collect.json` records where each file came from.
 
 ## Extract
 
@@ -71,94 +121,91 @@ Derived files of a WhatsApp export (iOS or Android, in any supported language): 
 | `page-NNN.ocr.txt` | `page-ocr` | OCR of the page, when the text layer has fewer than `--min-text` letters and digits (method `ocr`). |
 | `ocr.txt` | `image-ocr` | OCR of an image. |
 
-Each entry has `from` (the PDF or image), `page`, and `images`: the number of images that cover at least 10% of the page (size from `pdfimages -list` pixels and resolution, page size from `pdfinfo`), so logos and letterheads do not count. Pages with images are listed in the result, because photos and plans carry facts that the text does not.
+Each entry has `from` (the PDF or image), `page`, and `images`: the number of images that cover a large share of the page (from `pdfimages -list` and `pdfinfo`), so most logos and letterheads do not count. Pages with images are listed in the result, because photos and plans carry facts that the text does not.
 
-Tools: poppler (`pdfinfo`, `pdftotext`, `pdfimages`, `pdftoppm`) and tesseract with `eng`, `spa`, `fra` and `por`. They run in the tools image, built locally from `internal/tools/Dockerfile` on first use (tag `openarch-docs-tools:<hash of the Dockerfile>`). Each run has no network, no capabilities, and only the input file (read only) and a work folder mounted. A PDF takes two runs: text layer and image list, then page images and OCR. `--tools local` runs the same programs from `PATH`.
+Tools: poppler (`pdfinfo`, `pdftotext`, `pdfimages`, `pdftoppm`) and tesseract with `eng`, `spa`, `fra` and `por`. They run in the tools image, built locally from `internal/tools/Dockerfile` on first use (the tag holds a hash of the Dockerfile). Each run has no network, no capabilities, and only the input file (read only) and a work folder mounted.
 
-HEIC and WebP files are reported as unsupported: tesseract cannot read them.
+HEIC and WebP files are reported as unsupported, because tesseract cannot read them.
 
 ## Index and search
 
-`index` keeps `extracted/index.sqlite` (pure Go SQLite). It is a cache: deleting it only costs a rebuild.
+`index` keeps `extracted/index.sqlite` (pure Go SQLite). Deleting it costs a rebuild, including new embeddings.
 
-- Texts: email bodies (`message.txt`), chat messages (one line per message, with time and sender), page texts and OCR from `extract`, text originals, and every `.md` and `.txt` file in `notes/`.
-- Each text is split into chunks of about 800 characters at paragraph, line or sentence ends, with 120 characters of overlap. A change of these settings splits every text again. The rare chunk that is still longer than the 512 tokens of mxbai is cut for its embedding only. Chunks with fewer than 20 letters and digits (OCR noise of photos) are dropped.
-- An email body is first split at each forwarded or quoted message (`email.Segments`: marker lines, `From:` header blocks after a separator line, and reply lines such as "On <date>, <sender> wrote:" in every supported language). Each part is chunked on its own and gets the sender and date of its message, and the citation "..., quoted message from <sender> of <date>".
-- Each chunk keeps its citation (file or attachment name; for a file from an email, the email subject; for a chat photo, the sender and time; page; "(OCR)" or "(image description)"), its path, the original, the role (`case`, `reference`, `note`), the sender and the date.
-- Full text search: FTS5 with `unicode61 remove_diacritics 2`, so queries without accents find accented words. Short common words of each supported language (`StopWords` in `internal/lang`) are left out of queries; question words such as "donde" or "where" stay.
-- Embeddings: the embed model of the profile, with the citation before the chunk text. Queries get the mxbai instruction prefix. Vectors are normalized and compared by dot product over all chunks (case folders are small).
+- Texts: email bodies, chat messages (one line per message, with time and sender), page texts and OCR, image descriptions, text originals, and every `.md` and `.txt` file in `notes/`.
+- Each text is split into chunks with some overlap, at paragraph, line or sentence ends. Chunks with almost no letters and digits (OCR noise of photos) are dropped.
+- An email body is first split at each forwarded or quoted message (marker lines, `From:` blocks after a separator line, and reply lines such as "On <date>, <sender> wrote:"). Each part gets the sender and date of its own message, because a thread holds the words of many writers.
+- Each chunk keeps its citation (file name, email subject, page, "(OCR)" or "(image description)"), path, role, sender and date. The citation is part of the searchable text, so a file named `attachment-18.pdf` is found by the subject of its email.
+- Full text search: FTS5 with accents folded, so queries without accents find accented words. Common short words of each language are left out of queries; question words such as "donde" or "where" stay.
+- Embeddings: the embed model of the profile, with the citation before the chunk text. Vectors are compared by dot product over all chunks.
 - Only texts whose SHA-256 changed are split again. Chunks without embeddings (after `--no-embed`, or after a change of embedding model) get them on the next run.
 
-`search` merges the BM25 list and the embedding list with reciprocal rank fusion (k = 60). The citation is part of the full text of each chunk, so a file named `attachment-18.pdf` is found by the subject of the email it came with. When the query names a page ("página 6", "page 6", "pág. 6", "p. 6"; `PageWords` in `internal/lang`), two more lists with only the chunks of that page join the fusion with weight 3. Each hit says which search found it (`text`, `meaning`, `page`).
-
-Models run on Docker Model Runner at `--model-url` (default `http://localhost:12434/engines/v1`, env `OPENARCH_DOCS_MODEL_URL`). `--profile` (env `OPENARCH_DOCS_PROFILE`) picks the models.
+`search` merges the full text list and the embedding list with reciprocal rank fusion. When the query names a page ("página 6", "page 6", "p. 6"), two more lists with only the chunks of that page join with more weight. Each hit says which search found it (`text`, `meaning`, `page`).
 
 ## Ask
 
-`ask` searches the index for the question (12 case and reference chunks, and up to 3 notes, marked as interpretations; `--no-notes` leaves them out). With `--continue` (or `--new`, which starts over) a question is part of a conversation kept in `.ask/history.json`: the model first writes the question so that it stands alone, from the last 3 turns, and search uses that question; the last 3 turns also go to the model before the sources. Without these flags each question stands alone. Three retrieval steps are opt-in, because on a real case they added little quality for about 3 times the time: `--expand` (3 more queries the model writes in other words), `--rerank` (the model picks the useful passages from 30 candidates) and `--neighbors` (the chunks around each hit). When the question asks for the newest documents (`LatestWords` in `internal/lang`: "último", "latest", "dernier"), the first 3 chunks of each of the 3 newest messages join, outer emails and quoted messages alike, dated with the timeline date reader. The best chunks go to the chat model of the profile as numbered sources, at temperature 0 with a fixed seed, so a run can be repeated and compared. Each source is between `<source n="N" role="..." file="..." path="..." sender="..." date="...">` and `</source>`. Pieces of the same message become one source, labeled "part K of source N"; each quoted message of a thread is its own source, with its own sender and date. Each source shows its role (`case`, `reference`, `note`), its citation and its sender. The question comes before and after the sources.
+`ask` answers in four steps.
 
-The system message asks the model to answer in the language of the question, to cite a source for every fact as `[n]`, to say plainly when the sources do not hold the answer, to keep facts apart from interpretations, to treat notes as interpretations and references as rules, and to blame nobody without a source. The model makes no tool calls, so small models work. Thinking is off by default (`chat_template_kwargs.enable_thinking = false`; templates without it ignore it): GLM 4.7 Flash used all its tokens to think on long questions and wrote no answer. `--think` turns it on. An empty answer that stops for length is an error.
+1. **Question.** Without flags each question stands alone. With `--continue` it is part of a conversation kept in `.ask/history.json`: the model first rewrites the question so that it stands alone, from the last turns, and search uses that question. `--new` starts a new conversation.
+2. **Retrieve.** Search for case and reference chunks, plus a few notes marked as interpretations (`--no-notes` leaves them out). When the question asks for the newest documents (words such as "último", "latest", "dernier"), the first chunks of the newest messages join, outer emails and quoted messages alike. Messages with almost no text of their own are skipped: a forward that only wraps a quoted thread holds no new fact. Their dates come from the same date reader as `timeline`.
+3. **Sources.** Pieces of the same message become one source. Each quoted message of a thread is its own source. Each source is between `<source n="N" role="..." file="..." path="..." sender="..." date="...">` and `</source>`. The question comes before and after the sources.
+4. **Model.** The chat model answers at temperature 0 with a fixed seed, so runs on the same machine and model can be compared. The model makes no tool calls.
 
-The answer must be 1 to 5 sentences with source numbers. An answer with no sentences (only citations) gets one retry with a reminder, then a `warning`. The result lists the sources, marks the cited ones, and lists cited numbers that are not sources (`unknown`): a sign that the model made up a citation.
+The system message asks the model to answer in the language of the question; to cite a source for every fact, the source where it read the words, since emails quote other emails; to say plainly when the sources do not hold the answer; to keep facts apart from interpretations, with notes as interpretations and references as rules; to blame nobody without a source; and, for facts from emails and chats, to say who wrote them and when (a greeting names the reader, not the writer). Thinking is off by default, because a thinking model can use all its tokens and write no answer; `--think` turns it on.
 
-A citation check needs no model: for each sentence it counts the content words (four letters or more, no stop words, accents folded) found in each source. When a source that is not cited holds at least three of them and half again as many as the best cited source, the sentence is listed in `checks` with the better source. Emails quote other emails, and models tend to cite the source of the writer instead of the source of the words.
+The answer is 1 to 5 sentences with source numbers; an answer with only citations gets one retry, then a `warning`. The result lists the sources, marks the cited ones, and lists cited numbers that are not sources (`unknown`): a sign of a made-up citation.
+
+Models often cite the source of the writer instead of the source of the words. So a citation check, with no model, counts for each sentence the content words found in each source. When a source that is not cited holds clearly more of them (at least 1.5 times as many as the best cited source), the sentence is listed in `checks` with the better source.
 
 ## Timeline
 
-`timeline` needs no model. It lists, oldest first:
+`timeline` needs no model. It lists, oldest first, each email, each forwarded or quoted message in an email body, and each chat message (time, sender, text or attachment name).
 
-- each email (`message.txt` headers),
-- each forwarded or quoted message in an email body (`forwarded` in the manifest),
-- each chat message (time, sender, text or attachment name).
-
-Quoted dates are read in every supported language with the month names in `internal/lang` ("mié, 29 oct 2026 a las 18:00", "Fri, Oct 30, 2026 at 5:51 PM", "29 de outubro de 2026 18:00", "30/10/2026 7:51"; numeric dates are day first unless the month would pass 12). Times stay in the time zone of the source. A message that is an email in one file and a quoted forward in another is listed once, as the email.
+Quoted dates are read in every supported language ("mié, 29 oct 2026 a las 18:00", "Fri, Oct 30, 2026 at 5:51 PM", "29 de outubro de 2026 18:00", "30/10/2026 7:51"). Numeric dates are day first, unless the second number is over 12. Times stay in the time zone of the source. A message that is an email in one file and a quoted forward in another is listed once, as the email.
 
 ## Describe and look
 
-`describe` writes a text description, with the vision model of the profile, for:
+`describe` writes a text description, with the vision model of the profile, for each PDF page image with large images (or every page with `--all-pages`), and for each image original, attachment, inline image, chat photo and zip image. Small images (logos in signatures) are skipped. Pages that are mostly text, such as a scanned deed, are left to their text layer or OCR, because their text holds what matters.
 
-- each PDF page image with large images (`images` > 0), or every page with `--all-pages`,
-- each image original, attachment, inline image, chat photo and zip image of at least about 200 x 200 pixels. Smaller ones (logos in signatures) are skipped; HEIC and WebP are unsupported.
+The prompt asks for fixed headings, every readable text exactly as written, no guesses, and the main language of the case (or `--lang`). The description goes next to the image (`describe.txt` or `page-NNN.describe.txt`), and its manifest entry records the image, the page and the model.
 
-Images are scaled down to 1600 pixels on the longest side and sent inline as data URLs. The prompt asks for four headings (`Type`, `Text`, `Content`, `Location`), every readable text exactly as written, no guesses, and Content and Location in the main language of the case (`lang.Detect` over email and page texts) or `--lang`. Text before the first heading and closing offers ("Let me know...") are cut. The file is `describe.txt` next to an image, or `page-NNN.describe.txt` next to a page image; the manifest entry (kind `description`, method `vision`) records `from`, `page` and `model`. `index` indexes descriptions and cites them as "(image description)".
+`look` sends one or more images and one question to the vision model. An image is a path in the case folder or `<pdf>#<page>`. The answer language follows the question. Nothing is saved.
 
-`look` sends one or more images and one question to the vision model. An image is a path in the case folder or `<pdf>#<page>`. Each image is labeled "Image N: name" in the message. The answer language follows the question. Nothing is saved.
+## Sync and reindex
 
-With the large profile both commands unload the agent and chat models first (`docker model unload`), so the vision model has memory.
+`sync` uploads every original to `<remote>/originals/<path>` and every derived file to `<remote>/<path>` (paths start with `extracted/`). The default remote is `/cases/<slug of the case folder name>`. The search index is not uploaded. `sync` never deletes a remote document.
 
-## OpenArch
+The description of each uploaded document is the text `openarch-docs/1`, a space, and one line of JSON: `{"role":"original","original":{...}}` or `{"role":"derived","derived":{...}}`, the manifest entry of the file. (This `role` says original or derived; it is not the manifest role.) `extracted/sync.json` keeps the remote, the folder ids, and the id and SHA-256 of each uploaded file. Only files whose SHA-256 changed are uploaded again, with `openarch documents upload --replace`, so a document keeps its id.
 
-OpenArch is the store of record. `sync` uploads every original to `<remote>/originals/<path>` and every derived file to `<remote>/<path>` (paths start with `extracted/`), creating the folders as needed. The default remote is `/cases/<slug of the case folder name>`. The search index is a cache and is not uploaded.
+`reindex` reads the descriptions of the remote tree, downloads each file whose local copy is missing or differs, and merges the entries into the local manifest. A local original that differs is never overwritten; it is a conflict. Documents without the description prefix, and paths that would leave the case folder, are skipped. Then it updates the search index.
 
-Each uploaded document has `sys_description` = `openarch-docs/1 ` + one line of JSON: `{"role":"original","original":{...}}` or `{"role":"derived","derived":{...}}`, the manifest entry of the file. `extracted/sync.json` keeps the remote, the folder ids, and the id and SHA-256 of each uploaded file; only files whose SHA-256 changed are uploaded again, with `openarch documents upload --replace`, so a document keeps its id.
-
-`reindex` lists the remote folder tree, reads the descriptions, downloads each file whose local copy is missing or differs (through a temporary file), and merges the entries into the local manifest. A local original that differs is never overwritten; it is reported as a conflict. Documents without the description prefix, and entries whose path would leave the case folder, are skipped. Then it updates the search index.
-
-The plugin talks to OpenArch only by running `openarch ... --output json --non-interactive` (`$OPENARCH_BIN`, else `openarch` on `PATH`), so it never sees a password. Exit codes of openarch pass through (6 for a failed login). It needs an openarch with `documents upload --replace` and `--description`.
+The plugin runs `openarch ... --output json --non-interactive` for every call, so it never sees a password. Exit codes of openarch pass through (6 for a failed login). It needs an openarch whose `documents upload` has `--replace` and `--description`.
 
 ## MCP server, notes and skill
 
-`mcp` runs an MCP server on stdio (go-sdk) with typed tools: `search`, `read`, `files`, `timeline`, `verify`, `look` (left out with `--no-vision`) and `note_write` (left out with `--read-only`). All tools are marked read-only except `note_write`.
+`mcp` runs an MCP server on stdio with the MCP Go SDK. `mcp --help` lists its tools. Every tool reads, except `note_write` and `collect`, which write only in `notes/`; `--read-only` leaves them out, and `--no-vision` leaves out `look`.
 
-- `read` returns text files only (`.txt`, `.md`, `.json`, `.html`, `.eml`), in parts of up to 12000 characters with `next_offset`, and the manifest entry of the file as `provenance`. The manifest and `sync.json` are refused; `files` lists the manifest instead.
-- `files` lists originals and derived files with their kind, source, page, image count, attachment name, email subject, sender and date; it filters by kind and path prefix, in pages.
-- Paths that would leave the case folder are refused. Results are cut at 16000 bytes, so one result cannot fill the context of a small model; search hits are cut at 1200 characters.
+- `read` returns text files only, in parts, with the manifest entry of the file as `provenance`. The manifest and `sync.json` are refused; `files` lists the manifest instead.
+- Paths that would leave the case folder are refused. Results are cut to a fixed size, so one result does not fill the context of a small model.
 
-`note write` and `note_write` write only in `notes/`: names of letters, digits, `.`, `-` and `_`, with at most one folder (`drafts/reply.md`); `.md` is added when there is no `.md` or `.txt`. An existing note needs `--overwrite`. Notes are indexed with the role `note`.
+`note write` and `note_write` write only in `notes/`, with at most one folder (`drafts/reply.md`). An existing note needs `--overwrite`. Notes are indexed with the role `note` on the next `index`.
 
-The Agent Skill `skills/openarch-docs/SKILL.md` is embedded in the binary; `skill install` writes it to `<dir>/.claude/skills/openarch-docs/SKILL.md` (default: the case folder; hidden folders are never originals) and replaces a changed file only with `--force`.
+The Agent Skill `skills/openarch-docs/SKILL.md` is embedded in the binary. `skill install` writes it under `.claude/skills/` in the case folder, a hidden folder, so the skill is not part of the case.
 
-`examples/agent` runs Docker Agent with the MCP server as its only toolset and `skills: true`, on a synthetic sample case, and checks the folder after the run. `examples/agent/eval.sh` runs `eval` on the same sample case with `sample/questions.txt` (key facts in `F:` lines), as a regression check of answer quality.
-
-## Init, add, status and collect
-
-- `init [folder]` makes `references/`, `pasted/`, `notes/` and `notes/drafts/`, writes `AGENTS.md` (rules for people and agents: layout, citations, facts apart from interpretations, privacy) and installs the skill. It never changes a file that exists.
-- `add <file>...` copies files from outside the case folder (into the case folder, `--dir`, or `references/` with `--reference`); `add --text` saves stdin in `pasted/`. Then it ingests, and records `added` in the manifest entry of each original: `how` (`copied` or `pasted`), `from`, `sourceUrl`, `note`, `at`. Ingest keeps `added` when it parses a file again. A file with the same name and other content is an error; the same content is fine. `extracted/`, `notes/`, hidden folders and paths outside the case are refused.
-- `status` counts, with the `Pending` functions of each package, the files left for `ingest`, `extract`, `describe`, `index` (texts, or chunks without embeddings) and `sync`, plus `verify` problems, and names the next command. It needs no model and no OpenArch.
-- `collect <file>...` copies originals or derived files to `notes/outbox/<date>/` (or `--out`; inside the case folder only under `notes/outbox/`), naming attachments as the sender named them, and writes `collect.json` with the source, email, sender, date and SHA-256 of each file. Copies under `notes/` are never originals.
-
-The MCP server has `status` (read-only) and `collect` (writes only in `notes/outbox/`; left out with `--read-only`).
+`examples/agent` runs Docker Agent with the MCP server as its only toolset, on a synthetic sample case, and checks the folder after the run.
 
 ## Eval
 
-`eval <questions-file>` runs `ask` on each question of a file and scores the answer: `Q:` a question, `E:` groups of expected words (`;` between groups, `|` between alternatives; each group needs one), `N:` forbidden words, `S:` skip with a reason, `A:` a correct answer, `F:` one key fact of a right answer, `P:` an earlier question of the same conversation (asked first, in order, so `Q:` is a follow-up). Words are compared in lower case without accents. Pass: every group and no forbidden word; partial: at least half the groups; else fail. The report lists the answer, the cited sources and the time of each question. With `A:` or `F:` lines a judge model scores each answer 2, 1 or 0 from the share of key facts it states (0 with a contradiction). With `F:` lines the judge checks those fixed facts, and a fact it leaves out counts as not stated; with only `A:` it lists the facts itself, and its scores vary more. `--rejudge` scores an old JSON report again with the current file. Question files of private cases stay out of the repository.
+`eval <questions-file>` runs `ask` on each question of a file and scores the answers in two ways: expected and forbidden words (no model), and a judge model that checks the key facts of a right answer. The judge is the chat model of the large profile by default, on both profiles; `--judge-model` picks another. The question file format is in `eval --help`.
+
+`examples/agent/eval.sh` runs `eval` on the synthetic sample case, as a regression check of answer quality. Question files of private cases stay out of the repository.
+
+## Limits
+
+- **Untrusted text.** Case documents come from other people and go to the `ask` prompt and the MCP agent, so a document can hold instructions. Limits on the damage: no network, no tool calls in `ask`, MCP writes only in `notes/`, `--read-only`. Source text is not escaped yet: `</source>` in a document breaks the source tags.
+- **Stale remote files.** `sync` never deletes in OpenArch, so `reindex` brings back the files of a changed or deleted original. Accepted, because originals should not change. `reindex` does not yet check downloads against their SHA-256; run `verify` after it.
+- **Memory.** The RAM figure of each profile is the machine size it was tried on. In an agent run with `look`, the chat and vision models are loaded together.
+- **Context.** The plugin does not set or check the context size of the model. A long `ask` prompt can pass it, and the answer gets worse with no error.
+- **Scale.** Tried on cases of about 100 files and 500 chunks. Every search reads all vectors; a case with tens of thousands of chunks would need a vector index.
+- **Setup.** The network is needed once, to pull the models and build the tools image.
+- **Answers.** The models can be wrong. The citation checks are hints. Check important facts in the cited files.
+- **Privacy.** Case data is in the case folder, OpenArch, `.ask/` and the notes.
