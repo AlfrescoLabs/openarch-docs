@@ -377,7 +377,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 			if len(g.texts) > 1 {
 				fmt.Fprintf(&b, "(part %d of source %d)\n", j+1, s.N)
 			}
-			b.WriteString(t + "\n")
+			b.WriteString(text(t) + "\n")
 		}
 		b.WriteString("</source>\n\n")
 		sourceTexts = append(sourceTexts, strings.Join(g.texts, "\n"))
@@ -413,6 +413,15 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	res.Checks = checkCitations(answer, sourceTexts)
 	res.Cited, res.Unknown = citations(answer, len(res.Sources))
 	return res, nil
+}
+
+// sourceTag matches the start of a source tag in any case.
+var sourceTag = regexp.MustCompile(`(?i)<(/?source)`)
+
+// text makes s safe between source tags: a document that holds "</source>"
+// cannot end its source or start a new one.
+func text(s string) string {
+	return sourceTag.ReplaceAllString(s, "($1")
 }
 
 // attr makes s safe inside a double-quoted attribute.

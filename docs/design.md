@@ -201,7 +201,7 @@ The Agent Skill `skills/openarch-docs/SKILL.md` is embedded in the binary. `skil
 
 ## Limits
 
-- **Untrusted text.** Case documents come from other people and go to the `ask` prompt and the MCP agent, so a document can hold instructions. Limits on the damage: no network, no tool calls in `ask`, MCP writes only in `notes/`, `--read-only`. Source text is not escaped yet: `</source>` in a document breaks the source tags.
+- **Untrusted text.** Case documents come from other people and go to the `ask` prompt and the MCP agent, so a document can hold instructions. Limits on the damage: no network, no tool calls in `ask`, MCP writes only in `notes/`, `--read-only`. Source text is escaped, so a document cannot end its source tag or start a new one.
 - **Stale remote files.** `sync` never deletes in OpenArch, so `reindex` brings back the files of a changed or deleted original. Accepted, because originals should not change.
 - **Memory.** The RAM figure of each profile is the machine size it was tried on. In an agent run with `look`, the chat and vision models are loaded together.
 - **Context.** The plugin does not set or check the context size of the model. A long `ask` prompt can pass it, and the answer gets worse with no error.
