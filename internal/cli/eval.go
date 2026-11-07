@@ -12,7 +12,6 @@ import (
 	"github.com/AlfrescoLabs/openarch-docs/internal/ask"
 	"github.com/AlfrescoLabs/openarch-docs/internal/eval"
 	"github.com/AlfrescoLabs/openarch-docs/internal/index"
-	"github.com/AlfrescoLabs/openarch-docs/internal/models"
 	"github.com/AlfrescoLabs/openarch-docs/internal/output"
 )
 
@@ -78,7 +77,7 @@ The file has one block per question:
 Words are compared in lower case, without accents. An answer passes with
 every group, is partial with at least half, and fails with less, or with a
 forbidden word. With A: or F: lines, a judge model also scores each answer
-(--judge-model, the chat model of the large profile by default): 2 right,
+(--judge-model, the chat model of the profile by default): 2 right,
 1 partly right, 0 wrong. With F: lines it checks each fact; with only an
 A: line it lists the key facts of the reference itself, which is less steady. Keep a question file of a private case out of any repository.`,
 		Example: `  openarch docs eval ~/cases/garage-questions.txt
@@ -97,6 +96,9 @@ A: line it lists the key facts of the reference itself, which is less steady. Ke
 			p, err := app.profile()
 			if err != nil {
 				return err
+			}
+			if judgeModel == "" {
+				judgeModel = p.Chat
 			}
 			client := app.modelClient()
 			jopts := eval.Options{Judge: judge(client, noJudge), JudgeModel: judgeModel, JudgeThink: judgeThink}
@@ -147,8 +149,7 @@ A: line it lists the key facts of the reference itself, which is less steady. Ke
 	cmd.Flags().BoolVar(&rerank, "rerank", false, "ask with rerank (to measure it)")
 	cmd.Flags().BoolVar(&neigh, "neighbors", false, "ask with neighbor pieces (to measure them)")
 	cmd.Flags().BoolVar(&noNotes, "no-notes", false, "ask without notes (to measure them)")
-	large, _ := models.GetProfile("large")
-	cmd.Flags().StringVar(&judgeModel, "judge-model", large.Chat, "model that judges the answers; the same for every profile, so runs compare")
+	cmd.Flags().StringVar(&judgeModel, "judge-model", "", "model that judges the answers (default: the chat model of the profile); give the same one to compare profiles")
 	cmd.Flags().IntVar(&limit, "limit", 12, "number of sources the model reads for each question")
 	return cmd
 }

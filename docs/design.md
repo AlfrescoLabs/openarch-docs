@@ -195,7 +195,7 @@ The Agent Skill `skills/openarch-docs/SKILL.md` is embedded in the binary. `skil
 
 ## Eval
 
-`eval <questions-file>` runs `ask` on each question of a file and scores the answers in two ways: expected and forbidden words (no model), and a judge model that checks the key facts of a right answer. The judge is the chat model of the large profile by default, on both profiles; `--judge-model` picks another. The question file format is in `eval --help`.
+`eval <questions-file>` runs `ask` on each question of a file and scores the answers in two ways: expected and forbidden words (no model), and a judge model that checks the key facts of a right answer. The judge is the chat model of the profile by default, so the small profile never loads the large model; `--judge-model` picks another, and comparing two profiles needs the same judge for both. The question file format is in `eval --help`.
 
 `examples/agent/eval.sh` runs `eval` on the synthetic sample case, as a regression check of answer quality. Question files of private cases stay out of the repository.
 
