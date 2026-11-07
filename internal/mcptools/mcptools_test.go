@@ -3,6 +3,7 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,8 +159,49 @@ func TestReadOnly(t *testing.T) {
 
 func TestResultCut(t *testing.T) {
 	res, _, _ := result(map[string]string{"text": strings.Repeat("ñ", maxResult)})
-	text := res.Content[0].(*mcp.TextContent).Text
-	if len(text) > maxResult+100 || !strings.Contains(text, "result cut") {
-		t.Errorf("cut result has %d bytes", len(text))
+	if !res.IsError {
+		t.Error("a result over maxResult is not an error")
+	}
+
+	root := t.TempDir()
+	dir := filepath.Join(root, "notes")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 200 {
+		name := fmt.Sprintf("%03d-%s.md", i, strings.Repeat("n", 100))
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Quotes double in JSON, so 12000 characters give more than maxResult.
+	if err := os.WriteFile(filepath.Join(dir, "quotes.md"), []byte(strings.Repeat(`"`, 12000)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := session(t, Options{Root: root, Version: "test"})
+
+	text, isErr := call(t, cs, "files", map[string]any{"limit": 200})
+	var files struct {
+		Files      []map[string]any `json:"files"`
+		Cut        bool             `json:"cut"`
+		NextOffset int              `json:"next_offset"`
+	}
+	if err := json.Unmarshal([]byte(text), &files); err != nil || isErr || len(text) > maxResult {
+		t.Fatalf("files: %v, %d bytes", err, len(text))
+	}
+	if !files.Cut || len(files.Files) == 0 || len(files.Files) == 200 || files.NextOffset != len(files.Files) {
+		t.Errorf("files: cut %v, %d files, next %d", files.Cut, len(files.Files), files.NextOffset)
+	}
+
+	text, isErr = call(t, cs, "read", map[string]any{"path": "notes/quotes.md", "max_chars": 12000})
+	var read struct {
+		Text       string `json:"text"`
+		NextOffset int    `json:"next_offset"`
+	}
+	if err := json.Unmarshal([]byte(text), &read); err != nil || isErr || len(text) > maxResult {
+		t.Fatalf("read: %v, %d bytes", err, len(text))
+	}
+	if read.Text == "" || read.NextOffset != len(read.Text) {
+		t.Errorf("read: %d chars, next %d", len(read.Text), read.NextOffset)
 	}
 }

@@ -185,7 +185,7 @@ The plugin runs `openarch ... --output json --non-interactive` for every call, s
 `mcp` runs an MCP server on stdio with the MCP Go SDK. `mcp --help` lists its tools. Every tool reads, except `note_write` and `collect`, which write only in `notes/`; `--read-only` leaves them out, and `--no-vision` leaves out `look`.
 
 - `read` returns text files only, in parts, with the manifest entry of the file as `provenance`. The manifest and `sync.json` are refused; `files` lists the manifest instead.
-- Paths that would leave the case folder are refused. Results are cut to a fixed size, so one result does not fill the context of a small model.
+- Paths that would leave the case folder are refused. Results have a fixed size limit, so one result does not fill the context of a small model. Lists drop items from the end and set `cut`; `read` gives less text and a `next_offset`. A result stays valid JSON.
 
 `note write` and `note_write` write only in `notes/`, with at most one folder (`drafts/reply.md`). An existing note needs `--overwrite`. Notes are indexed with the role `note` on the next `index`.
 

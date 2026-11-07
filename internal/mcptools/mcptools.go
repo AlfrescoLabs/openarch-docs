@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -82,21 +81,40 @@ func boolPtr(b bool) *bool { return &b }
 
 type tools struct{ opts Options }
 
-// result returns v as JSON text, cut to maxResult.
+// result returns v as JSON text. A result longer than maxResult is an error,
+// so the model never gets broken JSON.
 func result(v any) (*mcp.CallToolResult, any, error) {
 	data, err := casefile.MarshalJSON(v)
 	if err != nil {
 		return nil, nil, err
 	}
-	text := string(data)
-	if len(text) > maxResult {
-		cut := text[:maxResult]
-		for !utf8.ValidString(cut) {
-			cut = cut[:len(cut)-1]
-		}
-		text = cut + "\n... (result cut; ask for less, such as a smaller limit)"
+	if len(data) > maxResult {
+		return toolError(fmt.Errorf("the result has %d bytes, more than %d; ask for less", len(data), maxResult))
 	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(data)}}}, nil, nil
+}
+
+// listResult returns out as JSON with items under key. When it is longer than
+// maxResult, items are dropped from the end and "cut" is set. kept, when not
+// nil, is told how many items stay, so a page can point to the next one.
+func listResult[T any](out map[string]any, key string, items []T, hint string, kept func(n int)) (*mcp.CallToolResult, any, error) {
+	n := len(items)
+	for {
+		out[key] = items[:n]
+		if kept != nil {
+			kept(n)
+		}
+		data, err := casefile.MarshalJSON(out)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(data) <= maxResult || n == 0 {
+			return result(out)
+		}
+		out["cut"] = true
+		out["hint"] = "Result cut to fit; " + hint
+		n--
+	}
 }
 
 func toolError(err error) (*mcp.CallToolResult, any, error) {
@@ -139,7 +157,7 @@ func (t *tools) search(ctx context.Context, _ *mcp.CallToolRequest, in SearchInp
 	if hits == nil {
 		hits = []index.Hit{}
 	}
-	return result(map[string]any{"query": in.Query, "hits": hits})
+	return listResult(map[string]any{"query": in.Query}, "hits", hits, "ask for a smaller limit, or read a file.", nil)
 }
 
 // ReadInput is the input of read.
@@ -175,10 +193,7 @@ func (t *tools) read(_ context.Context, _ *mcp.CallToolRequest, in ReadInput) (*
 	limit = min(limit, 12000)
 	start := min(max(in.Offset, 0), len(text))
 	end := min(start+limit, len(text))
-	out := map[string]any{"path": p, "offset": start, "total_chars": len(text), "text": string(text[start:end])}
-	if end < len(text) {
-		out["next_offset"] = end
-	}
+	out := map[string]any{"path": p, "offset": start, "total_chars": len(text)}
 	if m, err := casefile.Load(t.opts.Root); err == nil {
 		for _, d := range m.Derived {
 			if d.Path == p {
@@ -186,7 +201,22 @@ func (t *tools) read(_ context.Context, _ *mcp.CallToolRequest, in ReadInput) (*
 			}
 		}
 	}
-	return result(out)
+	// Escaped JSON can be longer than the text: give less text until it fits.
+	for {
+		out["text"] = string(text[start:end])
+		delete(out, "next_offset")
+		if end < len(text) {
+			out["next_offset"] = end
+		}
+		data, err := casefile.MarshalJSON(out)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(data) <= maxResult || end == start {
+			return result(out)
+		}
+		end = max(start, end-(end-start)/10-1)
+	}
 }
 
 // clean checks that a path stays in the case folder and returns it as a slash path.
@@ -273,11 +303,13 @@ func (t *tools) files(_ context.Context, _ *mcp.CallToolRequest, in FilesInput) 
 	limit = min(limit, 200)
 	start := min(max(in.Offset, 0), len(all))
 	end := min(start+limit, len(all))
-	out := map[string]any{"total": len(all), "offset": start, "files": all[start:end]}
-	if end < len(all) {
-		out["next_offset"] = end
-	}
-	return result(out)
+	out := map[string]any{"total": len(all), "offset": start}
+	return listResult(out, "files", all[start:end], "ask for a smaller limit, and use next_offset for the next page.", func(n int) {
+		delete(out, "next_offset")
+		if start+n < len(all) {
+			out["next_offset"] = start + n
+		}
+	})
 }
 
 // TimelineInput is the input of timeline.
@@ -295,7 +327,7 @@ func (t *tools) timeline(_ context.Context, _ *mcp.CallToolRequest, in TimelineI
 	if events == nil {
 		events = []timeline.Event{}
 	}
-	return result(map[string]any{"events": events})
+	return listResult(map[string]any{}, "events", events, "ask for fewer days with since and until, or fewer kinds.", nil)
 }
 
 // VerifyInput is the input of verify: nothing.
