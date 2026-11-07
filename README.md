@@ -2,14 +2,14 @@
 
 A plugin for the [openarch CLI](https://github.com/AlfrescoLabs/openarch-cli) to work with a folder of case documents: emails, chat exports, PDFs, scans and images.
 
-It stores the files in OpenArch, extracts their text, and answers questions about them with local models on Docker Model Runner. Nothing goes to the cloud.
+It stores the files in OpenArch, extracts their text, and answers questions about them with local models on Docker Model Runner. Nothing goes to the cloud. Every answer cites the file it comes from.
 
-Status: early development. `init`, `add`, `status`, `collect`, `eval`, `ingest`, `extract`, `describe`, `index`, `search`, `ask`, `timeline`, `look`, `sync`, `reindex`, `note`, `mcp`, `skill`, `verify` and `version` work today.
+Status: early release. Commands and file formats can still change.
 
 ## Requirements
 
-- Docker with Docker Model Runner.
-- The [`openarch` CLI](https://github.com/AlfrescoLabs/openarch-cli) 0.5.0 or later, and a running OpenArch (`openarch up`).
+- Docker with [Docker Model Runner](https://docs.docker.com/ai/model-runner/).
+- The [`openarch` CLI](https://github.com/AlfrescoLabs/openarch-cli) 0.5.0 or later, and a running OpenArch (`openarch up`). OpenArch is the store of record: `sync` uploads the case folder to it, and `reindex` brings it back.
 
 ## Install
 
@@ -39,23 +39,88 @@ cosign verify-blob checksums.txt \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-## Use
+## Models
+
+Pick the profile for your computer with `--profile` or `OPENARCH_DOCS_PROFILE`. The default is `small`.
+
+| Profile | RAM | Chat (`ask`) | Vision (`describe`, `look`) | Embeddings (`index`, `search`) |
+| --- | --- | --- | --- | --- |
+| `small` | 16 GB | `ai/qwen2.5` | `ai/gemma3:4B-Q4_K_M` | `ai/mxbai-embed-large` |
+| `large` | 32 GB | `ai/glm-4.7-flash:31B` | `ai/gemma3:4B-Q4_K_M` | `ai/mxbai-embed-large` |
+
+Pull the models of your profile once:
 
 ```
-openarch docs init my-case-folder && cd my-case-folder
-openarch docs add ~/Downloads/*.eml
+docker model pull ai/qwen2.5              # small; for large: ai/glm-4.7-flash:31B
+docker model pull ai/gemma3:4B-Q4_K_M
+docker model pull ai/mxbai-embed-large
+```
+
+The first `extract` builds a local Docker image with the PDF and OCR tools. It runs with no network.
+
+## Try it
+
+[examples/demo](examples/demo) is a synthetic case in English: forwarded emails, a scanned letter, a cable plan, photos, a card receipt and a WhatsApp export. From a clone of this repository:
+
+```
+examples/demo/prepare.sh /tmp/ev-charger
+cd /tmp/ev-charger
 openarch docs ingest
 openarch docs extract
 openarch docs describe
 openarch docs index
-openarch docs search "cuarto de contadores"
-openarch docs ask "¿Quién aportó las fotos de la solicitud?"
+openarch docs ask --new "Who took the photos on page 2 of the connection offer?"
+openarch docs ask --continue "Where was Tom Hughes that day?"
 openarch docs timeline
+```
+
+## Use it on your own case
+
+```
+openarch docs init ~/cases/garage && cd ~/cases/garage
+openarch docs add ~/Downloads/*.eml ~/Downloads/"WhatsApp Chat - Installer.zip"
+openarch docs ingest
+openarch docs extract
+openarch docs describe
+openarch docs index
+openarch docs ask "Where is the meter room?"
 openarch docs sync
 openarch docs verify
 ```
 
-`ingest` records each original with its SHA-256 and unpacks emails (body, attachments, inline images, attached emails) and WhatsApp exports into `extracted/`. `extract` gets the text of every PDF and image, with OCR in English, Spanish, French and Portuguese for scans. It runs the programs in a local Docker image with no network. `describe` writes a text for each photo, plan and image page with a local vision model, so search finds them. `look` asks the vision model about several images at once. `index` builds a local search index with full text search and embeddings from a local model. `search` finds texts by words and by meaning, and cites file and page. `ask` answers a question in its language with a local chat model and cites a source for every fact. `timeline` lists emails, quoted forwards and chat messages in time order. `sync` uploads the originals and derived files to OpenArch, each with its provenance in the description; `reindex` rebuilds the case folder and the index from OpenArch. `verify` checks that nothing changed.
+`openarch docs status` names the next step. Questions and answers work in English, Spanish, French and Portuguese: `ask` answers in the language of the question.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `init` | Makes the layout of a case folder: `references/`, `notes/`, `AGENTS.md` and the Agent Skill |
+| `add` | Copies files or pasted text into the case folder, and records where they came from |
+| `ingest` | Records each original with its SHA-256, and unpacks emails (attachments, inline images, attached and quoted messages) and WhatsApp exports into `extracted/` |
+| `extract` | Gets the text of every PDF and image, with OCR for scans |
+| `describe` | Writes a text for each photo, plan and image page with the vision model, so search finds them |
+| `index` | Builds the local search index: full text search and embeddings |
+| `search` | Finds texts by words and by meaning, and cites file and page |
+| `ask` | Answers a question with the chat model and cites a source for every fact; `--new` and `--continue` for a conversation |
+| `look` | Asks the vision model one question about one or more images |
+| `timeline` | Lists emails, quoted messages and chat messages in time order |
+| `note` | Writes notes and drafts in `notes/` |
+| `status` | Shows what is left to do, and the next command |
+| `collect` | Copies files to attach into one folder, with their real names |
+| `sync`, `reindex` | Upload the case folder to OpenArch, with the provenance of each file; rebuild it from OpenArch |
+| `verify` | Checks the originals and derived files against their SHA-256 |
+| `eval` | Asks a set of questions and scores the answers |
+| `mcp`, `skill` | An MCP server and an Agent Skill for AI agents |
+
+Every command has `--help` and `--output json`.
+
+## Agents
+
+`openarch docs mcp` is an MCP server with tools to search and read the case folder, look at its images, and write notes in `notes/`. `openarch docs skill install` adds an Agent Skill to the case folder. [examples/agent](examples/agent) runs a Docker Agent with both on a synthetic sample case in Spanish.
+
+## Design
+
+[docs/design.md](docs/design.md) explains the decisions, the pipeline and the limits.
 
 ## Build
 
@@ -67,7 +132,3 @@ go test ./...
 ## License
 
 Apache License 2.0.
-
-## Agents
-
-`openarch docs mcp` is an MCP server with tools to search and read the case folder, look at its images, and write notes in `notes/`. `openarch docs skill install` adds an Agent Skill to the case folder. [examples/agent](examples/agent) runs a Docker Agent with both on a synthetic sample case. [examples/demo](examples/demo) is a larger synthetic case in English, with scans, a plan, photos and a chat export.
