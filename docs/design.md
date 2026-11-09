@@ -2,7 +2,7 @@
 
 `openarch-docs` helps one person work with the documents of one case. A case is one folder of documents about one matter, such as a claim, a dispute or a request, where the facts are spread over emails, chat exports, PDFs, scans and photos. The tool records every file with its checksum, extracts the text, and answers questions with a source for every fact. All models run locally.
 
-It is one Go binary. It runs as the `openarch docs` plugin of the openarch CLI (github.com/AlfrescoLabs/openarch-cli), or on its own. OpenArch is the document store that the openarch CLI installs and runs; openarch-docs keeps each case there.
+It is one Go binary. It runs as the `openarch docs` plugin of the CLI for OpenArch (github.com/AlfrescoLabs/openarch-cli), or on its own. Hyland OpenArch is the document store that the CLI for OpenArch installs and runs; openarch-docs keeps each case there.
 
 The goal is the simplest deployment (fewest tools, least CPU, memory and model calls) with acceptable answers. "Acceptable" is checked, not targeted: `eval` on the synthetic sample case in `examples/agent` is the regression check.
 
