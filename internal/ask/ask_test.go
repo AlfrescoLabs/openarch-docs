@@ -301,3 +301,22 @@ func TestHistoryFile(t *testing.T) {
 		t.Errorf("clear twice: %v", err)
 	}
 }
+
+func TestKeepsKeyWords(t *testing.T) {
+	cases := []struct {
+		typed, rewrite string
+		want           bool
+	}{
+		{"Where was Tom Hughes that day?", "Where was K. Adams on 20 October 2026?", false},
+		{"Where was Tom Hughes that day?", "Where was Tom Hughes on 20 October 2026?", true},
+		{"Was the installer there that day?", "Was the installer Tom Hughes at the garage on 20 October 2026?", true},
+		{"¿Y qué dijo Ana el 30/10?", "¿Qué dijo Ána sobre el plano el 30/10?", true},
+		{"¿Y qué dijo Ana el 30/10?", "¿Qué dijo Ana sobre el plano el 29/10?", false},
+		{"¿Y dónde está?", "¿Dónde está la centralización del sotano?", true},
+	}
+	for _, c := range cases {
+		if got := keepsKeyWords(c.typed, c.rewrite); got != c.want {
+			t.Errorf("keepsKeyWords(%q, %q) = %v, want %v", c.typed, c.rewrite, got, c.want)
+		}
+	}
+}

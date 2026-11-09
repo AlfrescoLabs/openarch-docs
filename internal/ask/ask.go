@@ -120,10 +120,37 @@ func standalone(ctx context.Context, opts Options, language string) (string, err
 		line = strings.Trim(strings.TrimSpace(line), `"`)
 		line = strings.TrimSpace(strings.TrimPrefix(line, "New question:"))
 		if line != "" {
+			if !keepsKeyWords(opts.Question, line) {
+				return opts.Question, nil
+			}
 			return line, nil
 		}
 	}
 	return opts.Question, nil
+}
+
+// keepsKeyWords reports whether the rewrite keeps every name and number of
+// the typed question. A rewrite only adds context; when it drops a word the
+// user typed, it may have put another person or date in its place.
+func keepsKeyWords(typed, rewrite string) bool {
+	split := func(s string) []string {
+		return strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	}
+	have := map[string]bool{}
+	for _, w := range split(rewrite) {
+		have[foldAccents(strings.ToLower(w))] = true
+	}
+	for i, w := range split(typed) {
+		first := []rune(w)[0]
+		number := strings.ContainsFunc(w, unicode.IsDigit)
+		// The first word has a capital letter in any question.
+		name := i > 0 && unicode.IsUpper(first)
+		key := foldAccents(strings.ToLower(w))
+		if (number || name) && !stopWords[key] && !have[key] {
+			return false
+		}
+	}
+	return true
 }
 
 func lastTurns(h []Turn) []Turn {
