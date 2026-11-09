@@ -166,7 +166,7 @@ Quoted dates are read in every supported language ("mié, 29 oct 2026 a las 18:0
 
 `describe` writes a text description, with the vision model of the profile, for each PDF page image with large images (or every page with `--all-pages`), and for each image original, attachment, inline image, chat photo and zip image. Small images (logos in signatures) are skipped. Pages that are mostly text, such as a scanned deed, are left to their text layer or OCR, because their text holds what matters.
 
-The prompt asks for fixed headings, every readable text exactly as written, no guesses, and the main language of the case (or `--lang`). The description goes next to the image (`describe.txt` or `page-NNN.describe.txt`), and its manifest entry records the image, the page and the model.
+The prompt asks for fixed headings, every readable text exactly as written, no guesses, and the main language of the case (or `--lang`). The description goes next to the image (`describe.txt` or `page-NNN.describe.txt`), and its manifest entry records the image, the page and the model. The vision model runs at temperature 0 with a fixed seed, like `ask`, so a case gives the same descriptions on every run.
 
 `look` sends one or more images and one question to the vision model. An image is a path in the case folder or `<pdf>#<page>`. The answer language follows the question. Nothing is saved.
 

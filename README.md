@@ -73,7 +73,7 @@ openarch docs extract
 openarch docs describe
 openarch docs index
 openarch docs ask --new "Who took the photos on page 2 of the connection offer?"
-openarch docs ask --continue "Where was Tom Hughes that day?"
+openarch docs ask --continue "Was the installer there that day?"
 openarch docs timeline
 ```
 

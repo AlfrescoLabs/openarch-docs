@@ -350,10 +350,12 @@ func describeOne(ctx context.Context, opts Options, m *casefile.Manifest, t targ
 		}
 		_, _ = fmt.Fprintf(opts.Progress, "Describing %s\n", label)
 	}
+	// Temperature 0 and a fixed seed: a case gives the same descriptions, and
+	// so the same index, on every run.
 	text, err := opts.Chat.Chat(ctx, opts.Model, []models.Message{{Role: "user", Content: []models.Part{
 		models.TextPart(fmt.Sprintf(describePrompt, opts.Language.Name)), models.ImagePart(mt, img),
 		models.TextPart("Write Content and Location in " + opts.Language.Name + "."),
-	}}}, models.ChatOptions{Temperature: 0.1, MaxTokens: 700})
+	}}}, models.ChatOptions{Temperature: 0, Seed: 42, MaxTokens: 700})
 	if err != nil {
 		return "", "", err
 	}
@@ -439,7 +441,7 @@ func Look(ctx context.Context, root string, chat Chatter, model, question string
 		q += "\nAnswer in " + l.Name + "."
 	}
 	parts = append(parts, models.TextPart(q))
-	answer, err := chat.Chat(ctx, model, []models.Message{{Role: "user", Content: parts}}, models.ChatOptions{Temperature: 0.1, MaxTokens: 900})
+	answer, err := chat.Chat(ctx, model, []models.Message{{Role: "user", Content: parts}}, models.ChatOptions{Temperature: 0, Seed: 42, MaxTokens: 900})
 	if err != nil {
 		return nil, err
 	}
