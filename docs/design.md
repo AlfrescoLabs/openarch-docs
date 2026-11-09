@@ -158,7 +158,7 @@ Models often cite the source of the writer instead of the source of the words. S
 
 ## Timeline
 
-`timeline` needs no model. It lists, oldest first, each email, each forwarded or quoted message in an email body, and each chat message (time, sender, text or attachment name).
+`timeline` needs no model. It lists, oldest first, each email, each forwarded or quoted message in an email body, and each chat message (time, sender, text or attachment name). A quoted reply ("On <date>, <name> wrote:") has no subject line, so it gets the subject of the email that quotes it.
 
 Quoted dates are read in every supported language ("mié, 29 oct 2026 a las 18:00", "Fri, Oct 30, 2026 at 5:51 PM", "29 de outubro de 2026 18:00", "30/10/2026 7:51"). Numeric dates are day first, unless the second number is over 12. Times stay in the time zone of the source. A message that is an email in one file and a quoted forward in another is listed once, as the email.
 

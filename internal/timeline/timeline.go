@@ -99,8 +99,14 @@ func Build(opts Options) ([]Event, error) {
 					Subject: d.Message.Subject, Source: d.Source, Path: d.Path})
 			}
 			for _, f := range d.Forwarded {
+				// A reply line ("On <date>, <name> wrote:") has no subject, but
+				// the quoted message is part of the thread of the email.
+				subject := f.Subject
+				if subject == "" && d.Message != nil {
+					subject = d.Message.Subject
+				}
 				add(Event{Time: ParseDate(f.Date), Raw: f.Date, Kind: KindForwarded, From: f.From, To: f.To,
-					Subject: f.Subject, Source: d.Source, Path: d.Path})
+					Subject: subject, Source: d.Source, Path: d.Path})
 			}
 		case ingest.KindChatJSON:
 			data, err := os.ReadFile(filepath.Join(opts.Root, filepath.FromSlash(d.Path)))

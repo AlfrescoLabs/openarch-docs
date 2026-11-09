@@ -86,3 +86,22 @@ func TestBuild(t *testing.T) {
 		t.Errorf("filtered = %+v", events)
 	}
 }
+
+func TestBuildReplySubject(t *testing.T) {
+	root := t.TempDir()
+	eml := "From: Ana Lopez <ana@example.com>\nSubject: Re: Cable route\nDate: Thu, 22 Oct 2026 10:00:00 +0200\n\n" +
+		"Thanks.\n\nOn Wed, Oct 21, 2026 at 9:10 AM Tom Smith <tom@example.net> wrote:\n> The plan is attached.\n"
+	if err := os.WriteFile(filepath.Join(root, "a.eml"), []byte(eml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ingest.Run(ingest.Options{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := Build(Options{Root: root, Kinds: []string{KindForwarded}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Subject != "Re: Cable route" {
+		t.Errorf("events = %+v", events)
+	}
+}
