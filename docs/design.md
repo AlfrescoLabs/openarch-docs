@@ -152,7 +152,7 @@ HEIC and WebP files are reported as unsupported, because tesseract cannot read t
 
 The system message asks the model to answer in the language of the question; to cite a source for every fact, the source where it read the words, since emails quote other emails; to say plainly when the sources do not hold the answer; to keep facts apart from interpretations, with notes as interpretations and references as rules; to blame nobody without a source; and, for facts from emails and chats, to say who wrote them and when (a greeting names the reader, not the writer). Thinking is off by default, because a thinking model can use all its tokens and write no answer; `--think` turns it on.
 
-The answer is 1 to 5 sentences with source numbers; an answer with only citations gets one retry, then a `warning`. The result lists the sources, marks the cited ones, and lists cited numbers that are not sources (`unknown`): a sign of a made-up citation.
+The answer is 1 to 5 sentences with source numbers; an answer with only citations gets one retry, then a `warning`. The result lists the sources and the cited numbers (the text output shows paths only for cited sources and for sources a check points to), and lists cited numbers that are not sources (`unknown`): a sign of a made-up citation.
 
 Models often cite the source of the writer instead of the source of the words. So a citation check, with no model, counts for each sentence the content words found in each source. When a source that is not cited holds clearly more of them (at least 1.5 times as many as the best cited source), the sentence is listed in `checks` with the better source.
 

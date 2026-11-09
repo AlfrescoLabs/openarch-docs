@@ -22,17 +22,31 @@ func (r askResult) WriteText(w io.Writer) error {
 			return err
 		}
 	}
+	// Cited sources, and sources a check points to, get their path. The
+	// others get one line, so the answer stays on a normal screen; -o json
+	// lists them all.
+	full := map[int]bool{}
+	for _, n := range r.Cited {
+		full[n] = true
+	}
+	for _, c := range r.Checks {
+		full[c.Better] = true
+	}
 	if _, err := fmt.Fprintf(w, "%s\n\nSources:\n", r.Answer); err != nil {
 		return err
 	}
+	var other []string
 	for _, s := range r.Sources {
-		mark := " "
-		for _, n := range r.Cited {
-			if n == s.N {
-				mark = "*"
-			}
+		if !full[s.N] {
+			other = append(other, fmt.Sprintf("[%d]", s.N))
+			continue
 		}
-		if _, err := fmt.Fprintf(w, "%s[%d] %s (%s)\n     %s\n", mark, s.N, s.Cite, s.Role, s.Path); err != nil {
+		if _, err := fmt.Fprintf(w, "[%d] %s (%s)\n    %s\n", s.N, s.Cite, s.Role, s.Path); err != nil {
+			return err
+		}
+	}
+	if len(other) > 0 {
+		if _, err := fmt.Fprintf(w, "Read, not cited: %s (-o json lists them)\n", strings.Join(other, " ")); err != nil {
 			return err
 		}
 	}
@@ -51,7 +65,7 @@ func (r askResult) WriteText(w io.Writer) error {
 			return err
 		}
 	}
-	_, err := fmt.Fprintf(w, "* cited in the answer. Model: %s\n", r.Model)
+	_, err := fmt.Fprintf(w, "Model: %s\n", r.Model)
 	return err
 }
 
@@ -79,8 +93,9 @@ name), which search uses. The conversation is kept in .ask/history.json in
 the case folder. --new starts a new conversation. Without --continue or
 --new, each question stands alone.
 
-The answer lists the sources, marks the cited ones, and warns when the model
-cites a number that is not a source. Always check important facts in the
+The answer lists the cited sources with their paths, and the numbers of the
+other sources it read (-o json lists them all). It warns when the model cites
+a number that is not a source. Always check important facts in the
 cited files.
 
 Run index first.`,
