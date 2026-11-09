@@ -1,6 +1,9 @@
 # openarch-docs
 
-A plugin for the [openarch CLI](https://github.com/AlfrescoLabs/openarch-cli) to work with a folder of case documents: emails, chat exports, PDFs, scans and images.
+> [!IMPORTANT]
+> **Not an official Hyland product.** openarch-docs and the CLI for OpenArch are not Hyland OpenArch. They are in the [AlfrescoLabs](https://github.com/AlfrescoLabs) organization on GitHub because Hyland does not officially support them. Hyland OpenArch itself is at [github.com/hyland/OpenArch](https://github.com/hyland/OpenArch).
+
+A plugin for the [CLI for OpenArch](https://github.com/AlfrescoLabs/openarch-cli) to work with a folder of case documents: emails, chat exports, PDFs, scans and images.
 
 It stores the files in OpenArch, extracts their text, and answers questions about them with local models on Docker Model Runner. Nothing goes to the cloud. Every answer cites the file it comes from.
 
@@ -9,7 +12,7 @@ Status: early release. Commands and file formats can still change.
 ## Requirements
 
 - Docker with [Docker Model Runner](https://docs.docker.com/ai/model-runner/).
-- The [`openarch` CLI](https://github.com/AlfrescoLabs/openarch-cli) 0.5.0 or later, and a running OpenArch (`openarch up`). OpenArch is the store of record: `sync` uploads the case folder to it, and `reindex` brings it back.
+- The [CLI for OpenArch](https://github.com/AlfrescoLabs/openarch-cli) (`openarch`) 0.5.0 or later, and a running Hyland OpenArch (`openarch up`). OpenArch is the store of record: `sync` uploads the case folder to it, and `reindex` brings it back.
 
 ## Install
 
