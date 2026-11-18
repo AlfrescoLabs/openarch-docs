@@ -132,6 +132,12 @@ make build
 go test ./...
 ```
 
+## Community
+
+Questions, ideas and "show what you built" go to the
+[Hyland OpenArch group](https://community.hyland.com/group/26-hyland-openarch) on Hyland Community.
+Bugs and feature requests for this project go to its GitHub issues.
+
 ## License
 
 Apache License 2.0.
